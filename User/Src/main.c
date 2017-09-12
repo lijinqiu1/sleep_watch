@@ -136,6 +136,7 @@ static void leds_init(void)
 {
     nrf_gpio_cfg_output(ADVERTISING_LED_PIN_NO);
     nrf_gpio_cfg_output(CONNECTED_LED_PIN_NO);
+//	nrf_gpio_cfg_output(SPIM1_SS_PIN);
 }
 
 
@@ -539,6 +540,7 @@ static void SPI_Init(void)
 {
 	spi_master_config_t spi_config = SPI_MASTER_INIT_DEFAULT;
 
+	spi_config.SPI_Freq = SPI_FREQUENCY_FREQUENCY_K125;
 	spi_config.SPI_Pin_SCK = SPIM1_SCK_PIN;
 	spi_config.SPI_Pin_MISO = SPIM1_MISO_PIN;
 	spi_config.SPI_Pin_MOSI = SPIM1_MOSI_PIN;
@@ -554,6 +556,8 @@ static void SPI_Init(void)
 	}
 
 	spi_master_evt_handler_reg(SPI_MASTER_1,SPI_Master_Event_Handler);
+
+//	nrf_gpio_pin_clear(SPIM0_SS_PIN);
 }
 
 uint8_t SPI_Mems_Read_Reg(uint8_t reg)
@@ -604,7 +608,7 @@ static void LIS3DH_Init(void)
 int main(void)
 {
     // Initialize
-//    uint8_t data;
+    uint8_t data;
 	AxesRaw_t Axes_Raw_Data;
 	uint8_t response;
 	uint8_t buffer[26];
@@ -624,8 +628,8 @@ int main(void)
 
     advertising_start();
 
-//	LIS3DH_GetWHO_AM_I(&data);
-//	simple_uart_put(data);
+	LIS3DH_GetWHO_AM_I(&data);
+	simple_uart_put(data);
 
 	LIS3DH_Init();
 

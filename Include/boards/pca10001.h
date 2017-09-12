@@ -31,20 +31,20 @@
 #define RTS_PIN_NUMBER 8
 #define HWFC           false
 
-#define SPIS_MISO_PIN  20    // SPI MISO signal. 
-#define SPIS_CSN_PIN   21    // SPI CSN signal. 
-#define SPIS_MOSI_PIN  22    // SPI MOSI signal. 
-#define SPIS_SCK_PIN   23    // SPI SCK signal. 
+#define SPIS_MISO_PIN  20    // SPI MISO signal.
+#define SPIS_CSN_PIN   21    // SPI CSN signal.
+#define SPIS_MOSI_PIN  22    // SPI MOSI signal.
+#define SPIS_SCK_PIN   23    // SPI SCK signal.
 
 #define SPIM0_SCK_PIN       23u     /**< SPI clock GPIO pin number. */
 #define SPIM0_MOSI_PIN      20u     /**< SPI Master Out Slave In GPIO pin number. */
 #define SPIM0_MISO_PIN      22u     /**< SPI Master In Slave Out GPIO pin number. */
 #define SPIM0_SS_PIN        21u     /**< SPI Slave Select GPIO pin number. */
 
-#define SPIM1_SCK_PIN       16u     /**< SPI clock GPIO pin number. */
-#define SPIM1_MOSI_PIN      18u     /**< SPI Master Out Slave In GPIO pin number. */
-#define SPIM1_MISO_PIN      17u     /**< SPI Master In Slave Out GPIO pin number. */
-#define SPIM1_SS_PIN        19u     /**< SPI Slave Select GPIO pin number. */
+#define SPIM1_SCK_PIN       13u     /**< SPI clock GPIO pin number. */
+#define SPIM1_MOSI_PIN      14u     /**< SPI Master Out Slave In GPIO pin number. */
+#define SPIM1_MISO_PIN      15u     /**< SPI Master In Slave Out GPIO pin number. */
+#define SPIM1_SS_PIN        12u     /**< SPI Slave Select GPIO pin number. */
 
 // serialization APPLICATION board
 
