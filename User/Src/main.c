@@ -339,46 +339,6 @@ static void advertising_start(void)
     nrf_gpio_pin_set(ADVERTISING_LED_PIN_NO);
 }
 
-//倾角计算
-#define PI 3.1415926
-float calculateTilt(float ax, float ay, float az, uint8_t flag_x, uint8_t flag_y, uint8_t flag_z)
-{
-	float g = 9.80665;
-	float temp;
-	float Tiltangle = 0;
-	temp = ((sqrt(2)/2)*g/10);
-	if (az > temp)
-	{
-		Tiltangle = (1-ay*ay) - (1-ax*ax);
-		if (Tiltangle < 0) {
-			Tiltangle = - Tiltangle;
-		}
-
-		Tiltangle = acos(sqrt(Tiltangle));
-		Tiltangle = Tiltangle/PI*180;
-		if (flag_x == 1 || flag_y == 1)
-		{
-			Tiltangle += 90;
-		}
-		else
-		{
-			Tiltangle = 90 - Tiltangle;
-		}
-	}
-	else
-	{
-		Tiltangle = asin(az);
-		Tiltangle = Tiltangle/PI*180;
-		if(flag_z == 1) {
-			Tiltangle += 90;
-		}
-		else {
-			Tiltangle = 90-Tiltangle;
-		}
-	}
-	return Tiltangle;
-}
-
 /**@brief       Function for the Application's S110 SoftDevice event handler.
  *
  * @param[in]   p_ble_evt   S110 SoftDevice event.
@@ -654,13 +614,62 @@ static void period_cycle_process(void * p_context)
 {
 	lis3dh_flag = 1;
 }
-//周期事件初始化
+//****************周期事件初始化*********************
 static void period_cycle_process_init(void)
 {
 	app_timer_create(&p_timer,APP_TIMER_MODE_REPEATED,period_cycle_process);
 
 	app_timer_start(p_timer,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
 }
+
+//倾角计算
+#define PI 3.1415926
+static float calculateTilt_A(float ax, float ay, float az, uint8_t flag_x, uint8_t flag_y, uint8_t flag_z)
+{
+	float g = 9.80665;
+	float temp;
+	float Tiltangle = 0;
+	temp = ((sqrt(2)/2)*g/10);
+	if (az > temp)
+	{
+		Tiltangle = (1-ay*ay) - (1-ax*ax);
+		if (Tiltangle < 0) {
+			Tiltangle = - Tiltangle;
+		}
+
+		Tiltangle = acos(sqrt(Tiltangle));
+		Tiltangle = Tiltangle/PI*180;
+		if (flag_x == 1 || flag_y == 1)
+		{
+			Tiltangle += 90;
+		}
+		else
+		{
+			Tiltangle = 90 - Tiltangle;
+		}
+	}
+	else
+	{
+		Tiltangle = asin(az);
+		Tiltangle = Tiltangle/PI*180;
+		if(flag_z == 1) {
+			Tiltangle += 90;
+		}
+		else {
+			Tiltangle = 90-Tiltangle;
+		}
+	}
+	return Tiltangle;
+}
+static float calculateTilt_B(float ax, float ay, float az)
+{
+	float temp;
+	float Tiltangle = 0;
+	temp = sqrt(ax*ax + az*az) / ay;
+	Tiltangle = atan(temp);
+	return Tiltangle;
+}
+
 /**@brief  Application main function.
  */
 int main(void)
@@ -706,7 +715,8 @@ int main(void)
 				sprintf((char *)buffer, "X=%6f Y=%6f Z=%6f \r\n",
 					ax,ay,az);
 				simple_uart_putstring(buffer);
-				Tilt = calculateTilt(ax,ay,az,(ax > 0)?1:0,(ay > 0)?1:0,(az > 0)?1:0);
+//				Tilt = calculateTilt_B(ax,ay,az);
+				Tilt = calculateTilt_A(ax,ay,az,(ax >= 0.0)?1:0,(ay >= 0.0)?0:1,(az >= 0.0)?1:0);
 				sprintf((char *)buffer, "Tilt = %6f \r\n", Tilt);
 				simple_uart_putstring(buffer);
 			}
