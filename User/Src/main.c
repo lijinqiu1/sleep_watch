@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 #include "nordic_common.h"
 #include "nrf.h"
 #include "nrf51_bitfields.h"
@@ -191,7 +192,10 @@ static void advertising_init(void)
     uint32_t      err_code;
     ble_advdata_t advdata;
     ble_advdata_t scanrsp;
-    uint8_t       flags = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;
+	//广播超时模式
+//    uint8_t       flags = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;
+	//无限广播模式
+	uint8_t			flags = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
 
     ble_uuid_t adv_uuids[] = {{BLE_UUID_NUS_SERVICE, m_nus.uuid_type}};
 
@@ -327,7 +331,7 @@ static void advertising_start(void)
     adv_params.p_peer_addr = NULL;
     adv_params.fp          = BLE_GAP_ADV_FP_ANY;
     adv_params.interval    = APP_ADV_INTERVAL;
-    adv_params.timeout     = APP_ADV_TIMEOUT_IN_SECONDS;
+    adv_params.timeout     = 0;//广播超时 三分钟APP_ADV_TIMEOUT_IN_SECONDS
 
     err_code = sd_ble_gap_adv_start(&adv_params);
     APP_ERROR_CHECK(err_code);
@@ -335,6 +339,45 @@ static void advertising_start(void)
     nrf_gpio_pin_set(ADVERTISING_LED_PIN_NO);
 }
 
+//倾角计算
+#define PI 3.1415926
+float calculateTilt(float ax, float ay, float az, uint8_t flag_x, uint8_t flag_y, uint8_t flag_z)
+{
+	float g = 9.80665;
+	float temp;
+	float Tiltangle = 0;
+	temp = ((sqrt(2)/2)*g/10);
+	if (az > temp)
+	{
+		Tiltangle = (1-ay*ay) - (1-ax*ax);
+		if (Tiltangle < 0) {
+			Tiltangle = - Tiltangle;
+		}
+
+		Tiltangle = acos(sqrt(Tiltangle));
+		Tiltangle = Tiltangle/PI*180;
+		if (flag_x == 1 || flag_y == 1)
+		{
+			Tiltangle += 90;
+		}
+		else
+		{
+			Tiltangle = 90 - Tiltangle;
+		}
+	}
+	else
+	{
+		Tiltangle = asin(az);
+		Tiltangle = Tiltangle/PI*180;
+		if(flag_z == 1) {
+			Tiltangle += 90;
+		}
+		else {
+			Tiltangle = 90-Tiltangle;
+		}
+	}
+	return Tiltangle;
+}
 
 /**@brief       Function for the Application's S110 SoftDevice event handler.
  *
@@ -588,7 +631,7 @@ void SPI_Mems_Write_Reg(uint8_t WriteAddr, uint8_t Data)
 	while( transmission_completed==0);
 	transmission_completed = 0;
 }
-
+//3轴传感器初始化
 static void LIS3DH_Init(void)
 {
 	//设置采样率
@@ -603,16 +646,32 @@ static void LIS3DH_Init(void)
 	//使能3轴
 	LIS3DH_SetAxis(LIS3DH_X_ENABLE | LIS3DH_Y_ENABLE | LIS3DH_Z_ENABLE);
 }
+//****************周期事件处理函数*********************
+static app_timer_id_t p_timer;
+static bool lis3dh_flag = 0;
+//周期事件处理函数
+static void period_cycle_process(void * p_context)
+{
+	lis3dh_flag = 1;
+}
+//周期事件初始化
+static void period_cycle_process_init(void)
+{
+	app_timer_create(&p_timer,APP_TIMER_MODE_REPEATED,period_cycle_process);
+
+	app_timer_start(p_timer,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
+}
 /**@brief  Application main function.
  */
 int main(void)
 {
     // Initialize
-    uint8_t data;
+//    uint8_t data;
 	AxesRaw_t Axes_Raw_Data;
-	uint8_t response;
 	uint8_t buffer[26];
-
+	uint8_t response;
+	float ax,ay,az;
+	float Tilt;
     leds_init();
     timers_init();
     buttons_init();
@@ -625,22 +684,32 @@ int main(void)
     sec_params_init();
     simple_uart_putstring(START_STRING);
 	SPI_Init();
+	period_cycle_process_init();
 
     advertising_start();
 
-	LIS3DH_GetWHO_AM_I(&data);
-	simple_uart_put(data);
+//	LIS3DH_GetWHO_AM_I(&data);
+//	simple_uart_put(data);
 
 	LIS3DH_Init();
 
     // Enter main loop
     for (;;)
     {
-		response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
-		if (response == 1) {
-			sprintf((char *)buffer, "X=%6d Y=%6d Z=%6d \r\n",
-				Axes_Raw_Data.AXIS_X,Axes_Raw_Data.AXIS_Y,Axes_Raw_Data.AXIS_Z);
-			simple_uart_putstring(buffer);
+		if (lis3dh_flag == 1) {
+			lis3dh_flag = 0;
+			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
+			if (response == 1) {
+				ax = Axes_Raw_Data.AXIS_X/16384.0;
+				ay = Axes_Raw_Data.AXIS_Y/16384.0;
+				az = Axes_Raw_Data.AXIS_Z/16384.0;
+				sprintf((char *)buffer, "X=%6f Y=%6f Z=%6f \r\n",
+					ax,ay,az);
+				simple_uart_putstring(buffer);
+				Tilt = calculateTilt(ax,ay,az,(ax > 0)?1:0,(ay > 0)?1:0,(az > 0)?1:0);
+				sprintf((char *)buffer, "Tilt = %6f \r\n", Tilt);
+				simple_uart_putstring(buffer);
+			}
 		}
         power_manage();
     }
