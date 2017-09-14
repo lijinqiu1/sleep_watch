@@ -663,10 +663,14 @@ static float calculateTilt_A(float ax, float ay, float az, uint8_t flag_x, uint8
 }
 static float calculateTilt_B(float ax, float ay, float az)
 {
+	/*
+	*关于计算前后转动角度超值问题，记录前一时刻x,y,加速度正负，由正变负+90°
+	*/
 	float temp;
 	float Tiltangle = 0;
-	temp = sqrt(ax*ax + az*az) / ay;
+	temp = sqrt(ax*ax + ay*ay) / az;
 	Tiltangle = atan(temp);
+	Tiltangle = Tiltangle/PI*180;
 	return Tiltangle;
 }
 
@@ -676,7 +680,11 @@ int main(void)
 {
     // Initialize
 //    uint8_t data;
-	AxesRaw_t Axes_Raw_Data;
+	AxesRaw_t Axes_Raw_Data = {0};
+	//代表上一次加速度结果正负情况，1为正，0为负
+	uint8_t flag_x = 0;
+	uint8_t flag_y = 0;
+	uint8_t flag_z = 0;
 	uint8_t buffer[26];
 	uint8_t response;
 	float ax,ay,az;
@@ -715,8 +723,14 @@ int main(void)
 				sprintf((char *)buffer, "X=%6f Y=%6f Z=%6f \r\n",
 					ax,ay,az);
 				simple_uart_putstring(buffer);
+				Tilt = calculateTilt_A(ax,ay,az,(ax < 0.0)^flag_x,(ay < 0.0)^flag_y,(az < 0.0)^flag_z);
+				if (ax < 0.0) flag_x = 0;
+				else flag_x = 1;
+				if (ay < 0.0) flag_y = 0;
+				else flag_y = 1;
+				if (az < 0.0) flag_z = 0;
+				else flag_z = 1;
 //				Tilt = calculateTilt_B(ax,ay,az);
-				Tilt = calculateTilt_A(ax,ay,az,(ax >= 0.0)?1:0,(ay >= 0.0)?0:1,(az >= 0.0)?1:0);
 				sprintf((char *)buffer, "Tilt = %6f \r\n", Tilt);
 				simple_uart_putstring(buffer);
 			}

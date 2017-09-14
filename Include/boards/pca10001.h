@@ -41,10 +41,10 @@
 #define SPIM0_MISO_PIN      22u     /**< SPI Master In Slave Out GPIO pin number. */
 #define SPIM0_SS_PIN        21u     /**< SPI Slave Select GPIO pin number. */
 
-#define SPIM1_SCK_PIN       13u     /**< SPI clock GPIO pin number. */
-#define SPIM1_MOSI_PIN      14u     /**< SPI Master Out Slave In GPIO pin number. */
-#define SPIM1_MISO_PIN      15u     /**< SPI Master In Slave Out GPIO pin number. */
-#define SPIM1_SS_PIN        12u     /**< SPI Slave Select GPIO pin number. */
+#define SPIM1_SCK_PIN       15u     /**< SPI clock GPIO pin number. */
+#define SPIM1_MOSI_PIN      12u     /**< SPI Master Out Slave In GPIO pin number. */
+#define SPIM1_MISO_PIN      14u     /**< SPI Master In Slave Out GPIO pin number. */
+#define SPIM1_SS_PIN        13u     /**< SPI Slave Select GPIO pin number. */
 
 // serialization APPLICATION board
 
