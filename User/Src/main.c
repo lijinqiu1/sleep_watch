@@ -41,6 +41,8 @@
 #include "app_util_platform.h"
 #include "spi_master.h"
 #include "lis3dh_driver.h"
+#include "calender.h"
+#include "pstorage.h"
 
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
@@ -435,7 +437,10 @@ static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
     on_ble_evt(p_ble_evt);
 }
 
-
+static void sys_evt_dispatch(uint32_t sys_evt)
+{
+	pstorage_sys_event_handler(sys_evt);
+}
 /**@brief   Function for the S110 SoftDevice initialization.
  *
  * @details This function initializes the S110 SoftDevice and the BLE event interrupt.
@@ -457,6 +462,9 @@ static void ble_stack_init(void)
     // Subscribe for BLE events.
     err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch);
     APP_ERROR_CHECK(err_code);
+
+	err_code = softdevice_sys_evt_handler_set(sys_evt_dispatch);
+	APP_ERROR_CHECK(err_code);
 }
 
 /**@brief  Function for configuring the buttons.
@@ -613,6 +621,8 @@ static bool lis3dh_flag = 0;
 static void period_cycle_process(void * p_context)
 {
 	lis3dh_flag = 1;
+	//模拟日历
+	TimeSeconds ++;
 }
 //****************周期事件初始化*********************
 static void period_cycle_process_init(void)
@@ -622,7 +632,7 @@ static void period_cycle_process_init(void)
 	app_timer_start(p_timer,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
 }
 
-//倾角计算
+//*****************倾角计算**************************
 #define PI 3.1415926
 static float calculateTilt_A(float ax, float ay, float az, uint8_t flag_x, uint8_t flag_y, uint8_t flag_z)
 {
@@ -674,6 +684,56 @@ static float calculateTilt_B(float ax, float ay, float az)
 	return Tiltangle;
 }
 
+//*************************flash存储*******************************
+pstorage_handle_t block_id;
+static void flash_cb(pstorage_handle_t * handle, uint8_t op_code, uint32_t result,
+	uint8_t * p_data, uint32_t data_len)
+{
+	switch(op_code)
+	{
+	case PSTORAGE_UPDATE_OP_CODE:
+		if (result == NRF_SUCCESS){
+		}
+		else{
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void flash_init(void)
+{
+	uint32_t err_code;
+	pstorage_module_param_t module_param;
+	module_param.block_count = 18;
+	module_param.block_size = 512;
+	module_param.cb = flash_cb;
+	pstorage_init();
+	err_code = pstorage_register(&module_param, &block_id);
+	APP_ERROR_CHECK(err_code);
+}
+
+//**************************存储队列******************************
+#define QUEUE_MAX_ENTRIES  	8000
+//队列结构体
+typedef struct {
+	uint16_t entries;
+	uint16_t tx_point;
+	uint16_t rx_point;
+}queue_t;
+
+queue_t queue_entries;
+
+static void queue_init(void)
+{
+	pstorage_handle_t dest_block_id;
+	flash_init();
+	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
+	pstorage_load((uint8_t*)&queue_entries, &dest_block_id, sizeof(queue_t),0);
+
+}
+
 /**@brief  Application main function.
  */
 int main(void)
@@ -689,6 +749,8 @@ int main(void)
 	uint8_t response;
 	float ax,ay,az;
 	float Tilt;
+	//日历
+	UTCTimeStruct tm;
     leds_init();
     timers_init();
     buttons_init();
@@ -701,8 +763,10 @@ int main(void)
     sec_params_init();
     simple_uart_putstring(START_STRING);
 	SPI_Init();
+	//周期处理线程
 	period_cycle_process_init();
-
+	//flash初始化
+	queue_init();
     advertising_start();
 
 //	LIS3DH_GetWHO_AM_I(&data);
@@ -732,6 +796,9 @@ int main(void)
 				else flag_z = 1;
 //				Tilt = calculateTilt_B(ax,ay,az);
 				sprintf((char *)buffer, "Tilt = %6f \r\n", Tilt);
+				simple_uart_putstring(buffer);
+				ConvertUTCTime(&tm,TimeSeconds);
+				sprintf((char *)buffer,"%d-%d-%d,%d:%d:%d \r\n",tm.year,tm.month,tm.day,tm.hour,tm.minutes,tm.seconds);
 				simple_uart_putstring(buffer);
 			}
 		}
