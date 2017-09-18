@@ -42,6 +42,7 @@
 #include "spi_master.h"
 #include "lis3dh_driver.h"
 #include "calender.h"
+#include "queue.h"
 #include "pstorage.h"
 
 
@@ -682,56 +683,6 @@ static float calculateTilt_B(float ax, float ay, float az)
 	Tiltangle = atan(temp);
 	Tiltangle = Tiltangle/PI*180;
 	return Tiltangle;
-}
-
-//*************************flash存储*******************************
-pstorage_handle_t block_id;
-static void flash_cb(pstorage_handle_t * handle, uint8_t op_code, uint32_t result,
-	uint8_t * p_data, uint32_t data_len)
-{
-	switch(op_code)
-	{
-	case PSTORAGE_UPDATE_OP_CODE:
-		if (result == NRF_SUCCESS){
-		}
-		else{
-		}
-		break;
-	default:
-		break;
-	}
-}
-
-static void flash_init(void)
-{
-	uint32_t err_code;
-	pstorage_module_param_t module_param;
-	module_param.block_count = 18;
-	module_param.block_size = 512;
-	module_param.cb = flash_cb;
-	pstorage_init();
-	err_code = pstorage_register(&module_param, &block_id);
-	APP_ERROR_CHECK(err_code);
-}
-
-//**************************存储队列******************************
-#define QUEUE_MAX_ENTRIES  	8000
-//队列结构体
-typedef struct {
-	uint16_t entries;
-	uint16_t tx_point;
-	uint16_t rx_point;
-}queue_t;
-
-queue_t queue_entries;
-
-static void queue_init(void)
-{
-	pstorage_handle_t dest_block_id;
-	flash_init();
-	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
-	pstorage_load((uint8_t*)&queue_entries, &dest_block_id, sizeof(queue_t),0);
-
 }
 
 /**@brief  Application main function.
