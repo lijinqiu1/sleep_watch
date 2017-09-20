@@ -422,6 +422,11 @@
               <FileType>1</FileType>
               <FilePath>..\User\Src\lis3dh_driver.c</FilePath>
             </File>
+            <File>
+              <FileName>queue.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Src\queue.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -481,6 +486,11 @@
               <FileName>pstorage.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Source\app_common\pstorage.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_gpiote.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Source\app_common\app_gpiote.c</FilePath>
             </File>
           </Files>
         </Group>

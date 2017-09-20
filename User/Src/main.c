@@ -44,6 +44,7 @@
 #include "calender.h"
 #include "queue.h"
 #include "pstorage.h"
+#include "app_gpiote.h"
 
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
@@ -85,11 +86,38 @@
 
 #define DEAD_BEEF                       0xDEADBEEF                                  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
+#define LIS3DH_SMAPLE_RATE				1											/**< 三轴加速度采样频率 单位:秒>**/
+//gpiote
+#define MAX_USERS						1
+
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
 static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
 static ble_nus_t                        m_nus;                                      /**< Structure to identify the Nordic UART Service. */
 
+//gpiote user identifier
+static app_gpiote_user_id_t gpiote_user_id;
+static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
+//记录按键事件
+static bool key_pressed = true;
 
+//广播状态
+static bool adv_status = false;
+//设备工作状态
+static bool work_status = false;
+//蓝牙通信
+//报文缓存
+static uint8_t data_buff[20];
+//信息接收
+static bool message_received = false;
+
+typedef enum
+{
+	CMD_SET_TIME = 0x01,
+	CMD_REQUEST_DATA,
+	CMD_SEND_DATA,
+	CMD_SEND_DATA_COMPLETED,
+	CMD_SET_ALARM,
+}MESSAGE_CMD_ID_t;
 /**@brief     Error handler function, which is called when an error has occurred.
  *
  * @warning   This handler is an example only and does not fit a final product. You need to analyze
@@ -225,11 +253,8 @@ static void advertising_init(void)
 /**@snippet [Handling the data received over BLE] */
 void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t length)
 {
-    for (int i = 0; i < length; i++)
-    {
-        simple_uart_put(p_data[i]);
-    }
-    simple_uart_put('\n');
+	memcpy(data_buff,p_data,length);
+	message_received = true;
 }
 /**@snippet [Handling the data received over BLE] */
 
@@ -357,6 +382,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
         case BLE_GAP_EVT_CONNECTED:
             nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
             nrf_gpio_pin_clear(ADVERTISING_LED_PIN_NO);
+			adv_status = false;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 
             break;
@@ -467,14 +493,41 @@ static void ble_stack_init(void)
 	err_code = softdevice_sys_evt_handler_set(sys_evt_dispatch);
 	APP_ERROR_CHECK(err_code);
 }
+//gpiote handler function
+static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low)
+{
+	if (event_pins_high_to_low & (uint32_t)(1<<BUTTON_1))
+	{
+		//button 1 pressed
+		key_pressed = 1;
+	}
+}
+
 
 /**@brief  Function for configuring the buttons.
  */
 static void buttons_init(void)
 {
-    nrf_gpio_cfg_sense_input(WAKEUP_BUTTON_PIN,
-                             BUTTON_PULL,
-                             NRF_GPIO_PIN_SENSE_LOW);
+	uint32_t low_to_high_bitmask = (uint32_t)(1 << BUTTON_1);
+	uint32_t high_to_low_bitmask = (uint32_t)(1 << BUTTON_1);
+	uint32_t err_code;
+
+//    nrf_gpio_cfg_sense_input(WAKEUP_BUTTON_PIN,
+//                             BUTTON_PULL,
+//                             NRF_GPIO_PIN_SENSE_LOW);
+	nrf_gpio_cfg_sense_input(BUTTON_1,
+						 BUTTON_PULL,
+						 NRF_GPIO_PIN_SENSE_LOW);
+	//初始化gpio引脚中断
+	APP_GPIOTE_INIT(MAX_USERS);
+	err_code = app_gpiote_user_register(&gpiote_user_id,
+										low_to_high_bitmask,
+										high_to_low_bitmask,
+										gpiote_event_handler);
+	APP_ERROR_CHECK(err_code);
+
+	err_code = app_gpiote_user_enable(gpiote_user_id);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -621,9 +674,59 @@ static bool lis3dh_flag = 0;
 //周期事件处理函数
 static void period_cycle_process(void * p_context)
 {
-	lis3dh_flag = 1;
+	static uint32_t lis3dh_timer = 0;
+	static uint8_t key_timer = 0;
+	uint8_t key_status;
 	//模拟日历
 	TimeSeconds ++;
+
+	if (lis3dh_timer >= LIS3DH_SMAPLE_RATE)
+	{//使用三轴加速度采样
+		lis3dh_timer = 0;
+		lis3dh_flag = 1;
+	}
+
+	if (key_pressed == 1)
+	{
+		key_status = nrf_gpio_pin_read(BUTTON_1);
+		if (key_status == 0)
+		{
+			key_timer ++;
+		}
+		else
+		{
+			key_pressed = 0;
+			if(key_timer < 2)
+			{
+				//短按
+				if (adv_status == true)
+				{
+					sd_ble_gap_adv_stop();
+					adv_status = false;
+				}
+				if (work_status == false)
+				{
+					// begin to work
+					work_status = true;
+				}
+				else
+				{
+					// stop work
+					work_status = false;
+				}
+			}
+			else
+			{
+				//长按
+				if (adv_status == false)
+				{
+					adv_status = true;
+					advertising_start();
+				}
+			}
+			key_timer = 0;
+		}
+	}
 }
 //****************周期事件初始化*********************
 static void period_cycle_process_init(void)
@@ -685,6 +788,53 @@ static float calculateTilt_B(float ax, float ay, float az)
 	return Tiltangle;
 }
 
+//报文处理函数
+static void message_process(uint8_t *ch)
+{
+	uint8_t cmd_id;
+	UTCTimeStruct tm;
+	uint32_t err_code;
+	uint8_t data_array[20];
+	if (ch[0] != 0xA5)
+	{
+		return ;
+	}
+	cmd_id = ch[2];
+
+	switch(cmd_id)
+	{
+	case CMD_SET_TIME:
+		//设置时间
+		tm.year = 2000 + ch[3];
+		tm.month = ch[4];
+		tm.day = ch[5];
+		tm.hour = ch[6];
+		tm.minutes = ch[7];
+		tm.seconds = ch[8];
+		TimeSeconds = ConvertUTCSecs(&tm);
+		//发送响应报文
+		data_array[0] = 0xA5;
+		data_array[1] = 0x02;
+		data_array[2] = 0x01;
+		data_array[3] = 0x01;
+		data_array[4] = 0x80;
+		err_code = ble_nus_send_string(&m_nus, data_array, 5);
+        if (err_code != NRF_ERROR_INVALID_STATE)
+        {
+            APP_ERROR_CHECK(err_code);
+        }
+		break;
+	case CMD_REQUEST_DATA:
+		//开始上传数据
+		break;
+	case CMD_SET_ALARM:
+		//设置干涉条件
+		break;
+	default:
+		break;
+	}
+}
+
 /**@brief  Application main function.
  */
 int main(void)
@@ -692,10 +842,6 @@ int main(void)
     // Initialize
 //    uint8_t data;
 	AxesRaw_t Axes_Raw_Data = {0};
-	//代表上一次加速度结果正负情况，1为正，0为负
-	uint8_t flag_x = 0;
-	uint8_t flag_y = 0;
-	uint8_t flag_z = 0;
 	uint8_t buffer[26];
 	uint8_t response;
 	float ax,ay,az;
@@ -704,7 +850,6 @@ int main(void)
 	UTCTimeStruct tm;
     leds_init();
     timers_init();
-    buttons_init();
     uart_init();
     ble_stack_init();
     gap_params_init();
@@ -718,7 +863,9 @@ int main(void)
 	period_cycle_process_init();
 	//flash初始化
 	queue_init();
-    advertising_start();
+	//gpiote初始化
+    buttons_init();
+//    advertising_start();
 
 //	LIS3DH_GetWHO_AM_I(&data);
 //	simple_uart_put(data);
@@ -738,13 +885,7 @@ int main(void)
 				sprintf((char *)buffer, "X=%6f Y=%6f Z=%6f \r\n",
 					ax,ay,az);
 				simple_uart_putstring(buffer);
-				Tilt = calculateTilt_A(ax,ay,az,(ax < 0.0)^flag_x,(ay < 0.0)^flag_y,(az < 0.0)^flag_z);
-				if (ax < 0.0) flag_x = 0;
-				else flag_x = 1;
-				if (ay < 0.0) flag_y = 0;
-				else flag_y = 1;
-				if (az < 0.0) flag_z = 0;
-				else flag_z = 1;
+				Tilt = calculateTilt_A(ax,ay,az,(ax > 0.0),(ay > 0.0),(az > 0.0));
 //				Tilt = calculateTilt_B(ax,ay,az);
 				sprintf((char *)buffer, "Tilt = %6f \r\n", Tilt);
 				simple_uart_putstring(buffer);
@@ -752,6 +893,11 @@ int main(void)
 				sprintf((char *)buffer,"%d-%d-%d,%d:%d:%d \r\n",tm.year,tm.month,tm.day,tm.hour,tm.minutes,tm.seconds);
 				simple_uart_putstring(buffer);
 			}
+		}
+		if (message_received == true)
+		{//有数据接收
+			message_received = false;
+			message_process(data_buff);
 		}
         power_manage();
     }
