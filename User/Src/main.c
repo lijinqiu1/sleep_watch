@@ -98,18 +98,21 @@ static ble_nus_t                        m_nus;                                  
 static app_gpiote_user_id_t gpiote_user_id;
 static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
 //记录按键事件
-static bool key_pressed = true;
+static bool key_pressed = false;
 
 //广播状态
 static bool adv_status = false;
 //设备工作状态
 static bool work_status = false;
+static bool last_work_status = false;
 //蓝牙通信
 //报文缓存
 static uint8_t data_buff[20];
 //信息接收
 static bool message_received = false;
 
+//角度值初始化
+static uint8_t tilt_init_flag = false;
 typedef enum
 {
 	CMD_SET_TIME = 0x01,
@@ -363,8 +366,6 @@ static void advertising_start(void)
 
     err_code = sd_ble_gap_adv_start(&adv_params);
     APP_ERROR_CHECK(err_code);
-
-    nrf_gpio_pin_set(ADVERTISING_LED_PIN_NO);
 }
 
 /**@brief       Function for the Application's S110 SoftDevice event handler.
@@ -381,7 +382,6 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
     {
         case BLE_GAP_EVT_CONNECTED:
             nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
-            nrf_gpio_pin_clear(ADVERTISING_LED_PIN_NO);
 			adv_status = false;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 
@@ -680,12 +680,7 @@ static void period_cycle_process(void * p_context)
 	//模拟日历
 	TimeSeconds ++;
 
-	if (lis3dh_timer >= LIS3DH_SMAPLE_RATE)
-	{//使用三轴加速度采样
-		lis3dh_timer = 0;
-		lis3dh_flag = 1;
-	}
-
+	//按键处理
 	if (key_pressed == 1)
 	{
 		key_status = nrf_gpio_pin_read(BUTTON_1);
@@ -708,6 +703,8 @@ static void period_cycle_process(void * p_context)
 				{
 					// begin to work
 					work_status = true;
+					//初始化角度值
+					tilt_init_flag = true;
 				}
 				else
 				{
@@ -727,6 +724,13 @@ static void period_cycle_process(void * p_context)
 			key_timer = 0;
 		}
 	}
+
+
+	if ((work_status == true)&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE))
+	{//使用三轴加速度采样
+		lis3dh_timer = 0;
+		lis3dh_flag = 1;
+	}
 }
 //****************周期事件初始化*********************
 static void period_cycle_process_init(void)
@@ -738,7 +742,7 @@ static void period_cycle_process_init(void)
 
 //*****************倾角计算**************************
 #define PI 3.1415926
-static float calculateTilt_A(float ax, float ay, float az, uint8_t flag_x, uint8_t flag_y, uint8_t flag_z)
+static float calculateTilt_A(float ax, float ay, float az)
 {
 	float g = 9.80665;
 	float temp;
@@ -753,28 +757,58 @@ static float calculateTilt_A(float ax, float ay, float az, uint8_t flag_x, uint8
 
 		Tiltangle = acos(sqrt(Tiltangle));
 		Tiltangle = Tiltangle/PI*180;
-		if (flag_x == 1 || flag_y == 1)
-		{
-			Tiltangle += 90;
-		}
-		else
-		{
-			Tiltangle = 90 - Tiltangle;
-		}
+		Tiltangle = 90 - Tiltangle;
+
 	}
 	else
 	{
 		Tiltangle = asin(az);
 		Tiltangle = Tiltangle/PI*180;
-		if(flag_z == 1) {
-			Tiltangle += 90;
-		}
-		else {
-			Tiltangle = 90-Tiltangle;
-		}
+		Tiltangle = 90-Tiltangle;
 	}
 	return Tiltangle;
 }
+
+//返回角度差
+//flag = 1重新获取角度基准值，flag = 0开始计算
+static float calculateTilt_run(float ax, float ay, float az)
+{
+	static float First_Tiltangle = 0;
+	float Tiltangle = 0;
+	//三轴初始位置
+	static uint8_t flag_x;
+	static uint8_t flag_y;
+	static uint8_t flag_z;
+	//转动趋势,用于辨别角度值变化是否超过180°
+	static uint8_t trend;
+
+	if (tilt_init_flag == 1)
+	{
+		tilt_init_flag = 0;
+		First_Tiltangle = calculateTilt_A(ax,ay,az);
+		flag_x = ax < 0.0;
+		flag_y = ay < 0.0;
+		flag_z = az < 0.0;
+		trend = 0;
+	}
+	Tiltangle = calculateTilt_A(ax,ay,az);
+	if ((flag_x ^ (ax < 0.0)) || (flag_y ^ (ay < 0.0)) || (flag_z ^ (az < 0.0)))
+	{
+		return (Tiltangle + First_Tiltangle);
+	}
+	else
+	{
+		if (Tiltangle >= First_Tiltangle)
+		{
+			return (Tiltangle - First_Tiltangle);
+		}
+		else
+		{
+			return (First_Tiltangle - Tiltangle);
+		}
+	}
+}
+
 static float calculateTilt_B(float ax, float ay, float az)
 {
 	/*
@@ -846,8 +880,6 @@ int main(void)
 	uint8_t response;
 	float ax,ay,az;
 	float Tilt;
-	//日历
-	UTCTimeStruct tm;
     leds_init();
     timers_init();
     uart_init();
@@ -885,12 +917,10 @@ int main(void)
 				sprintf((char *)buffer, "X=%6f Y=%6f Z=%6f \r\n",
 					ax,ay,az);
 				simple_uart_putstring(buffer);
-				Tilt = calculateTilt_A(ax,ay,az,(ax > 0.0),(ay > 0.0),(az > 0.0));
+				Tilt = calculateTilt_run(ax,ay,az);
+
 //				Tilt = calculateTilt_B(ax,ay,az);
 				sprintf((char *)buffer, "Tilt = %6f \r\n", Tilt);
-				simple_uart_putstring(buffer);
-				ConvertUTCTime(&tm,TimeSeconds);
-				sprintf((char *)buffer,"%d-%d-%d,%d:%d:%d \r\n",tm.year,tm.month,tm.day,tm.hour,tm.minutes,tm.seconds);
 				simple_uart_putstring(buffer);
 			}
 		}
