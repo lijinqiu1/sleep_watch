@@ -3,7 +3,7 @@
 
 //**************************存储队列******************************
 //第一个元素用于存储队列信息。
-#define QUEUE_MAX_ENTRIES  	8000
+#define QUEUE_MAX_ENTRIES  	10
 //每一个block中包含的元素个数
 #define QUEUE_BLOCK_ITEMS_COUNT 128
 
@@ -32,6 +32,12 @@ typedef enum {
 	QUEUE_STATUS_UPDATE_FAILED,
 }queue_status_t;
 
+extern queue_t queue_entries;
+
 void queue_init(void);
+uint8_t queue_pop(queue_items_t *item);
+void queue_push(queue_items_t *item);
+uint16_t queue_get_entries(void);
+
 
 #endif

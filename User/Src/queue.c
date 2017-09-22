@@ -77,7 +77,6 @@ void queue_push(queue_items_t *item)
 	pstorage_update(&dest_block_id,(uint8_t *)item,sizeof(queue_items_t),offset);
 	queue_status = QUEUE_STATUS_UPDATING;
 	while(queue_status == QUEUE_STATUS_UPDATING);
-
 	if (queue_entries.entries != QUEUE_MAX_ENTRIES)
 	{//¶ÓÁÐÎ´Âú
 		queue_entries.entries++;
@@ -103,7 +102,7 @@ void queue_push(queue_items_t *item)
 	while(queue_status == QUEUE_STATUS_UPDATING);
 }
 
-void queue_pop(queue_items_t *item)
+uint8_t queue_pop(queue_items_t *item)
 {
 	pstorage_size_t offset;
 	pstorage_size_t block_num;
@@ -111,14 +110,14 @@ void queue_pop(queue_items_t *item)
 
 	if (queue_entries.entries == 1)
 	{
-		return ;
+		return 1;
 	}
 
-	block_num = queue_entries.tx_point / QUEUE_BLOCK_ITEMS_COUNT;
-	offset = (queue_entries.tx_point % QUEUE_BLOCK_ITEMS_COUNT) * sizeof(queue_items_t);
+	block_num = queue_entries.rx_point / QUEUE_BLOCK_ITEMS_COUNT;
+	offset = (queue_entries.rx_point % QUEUE_BLOCK_ITEMS_COUNT) * sizeof(queue_items_t);
 
 	pstorage_block_identifier_get(&block_id, block_num, &dest_block_id);
-	pstorage_load((uint8_t*)&item, &dest_block_id, sizeof(queue_items_t),offset);
+	pstorage_load((uint8_t*)item, &dest_block_id, sizeof(queue_items_t),offset);
 
 	if (queue_entries.entries != 1)
 	{
@@ -133,6 +132,7 @@ void queue_pop(queue_items_t *item)
 	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
 	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,sizeof(queue_t),0);
 	queue_status = QUEUE_STATUS_UPDATING;
+	return 0;
 }
 #else
 void queue_init(void)
@@ -242,4 +242,9 @@ void queue_pop(queue_items_t *item)
 	queue_status = QUEUE_STATUS_UPDATING;
 }
 #endif
+uint16_t queue_get_entries(void)
+{
+	return queue_entries.entries;
+}
+
 

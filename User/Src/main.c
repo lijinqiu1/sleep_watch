@@ -86,7 +86,9 @@
 
 #define DEAD_BEEF                       0xDEADBEEF                                  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
-#define LIS3DH_SMAPLE_RATE				1											/**< 三轴加速度采样频率 单位:秒>**/
+#define LIS3DH_SMAPLE_RATE				1											/**< 三轴加速度采样频率 单位:秒 >**/
+
+#define ANGLE_SMAPLE_RATE				300											/**< 角度数据采样频率 单位:秒 >**/
 //gpiote
 #define MAX_USERS						1
 
@@ -97,22 +99,26 @@ static ble_nus_t                        m_nus;                                  
 //gpiote user identifier
 static app_gpiote_user_id_t gpiote_user_id;
 static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
-//记录按键事件
-static bool key_pressed = false;
 
-//广播状态
-static bool adv_status = false;
-//设备工作状态
-static bool work_status = false;
-static bool last_work_status = false;
-//蓝牙通信
-//报文缓存
-static uint8_t data_buff[20];
-//信息接收
-static bool message_received = false;
+/***********************************事件定义***************************************/
+#define EVENT_KEY_PRESSED               (uint32_t)(0x00000001 << 0)                  /**< 按键事件 >**/
+#define EVENT_MESSAGE_RECEIVED          (uint32_t)(0x00000001 << 1)					 /**< 通信事件 >**/
+#define EVENT_DATA_SENDING				(uint32_t)(0x00000001 << 2)					 /**< 数据发送事件 >**/
+#define EVENT_DATA_SENDED               (uint32_t)(0x00000001 << 3)					 /**< 数据发送完成事件 >**/
+static uint32_t event_status = 0;      //时间存储变量
+static bool key_pressed = false;         //记录按键事件
+static bool adv_status = false;          //广播状态
+static bool work_status = false;         //设备工作状态
+static bool message_received = false;  //信息接收
+static bool data_send_status = false;  //发送数据
+static uint8_t tilt_init_flag = false; //角度值初始化
+static float Tilt;                       //当前倾角变化值
+static uint8_t rec_data_buffer[20];      //缓存接收到的数据
+static bool ble_connect_status = false;  //蓝牙连接状态
 
-//角度值初始化
-static uint8_t tilt_init_flag = false;
+//干涉条件
+static uint8_t alarm_angle;//干涉角度
+static uint8_t alarm_timer;//干涉时间
 typedef enum
 {
 	CMD_SET_TIME = 0x01,
@@ -256,7 +262,7 @@ static void advertising_init(void)
 /**@snippet [Handling the data received over BLE] */
 void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t length)
 {
-	memcpy(data_buff,p_data,length);
+	memcpy(rec_data_buffer,p_data,length);
 	message_received = true;
 }
 /**@snippet [Handling the data received over BLE] */
@@ -391,7 +397,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             nrf_gpio_pin_clear(CONNECTED_LED_PIN_NO);
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
 
-            advertising_start();
+//            advertising_start();
 
             break;
 
@@ -498,8 +504,11 @@ static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event
 {
 	if (event_pins_high_to_low & (uint32_t)(1<<BUTTON_1))
 	{
-		//button 1 pressed
-		key_pressed = 1;
+		if (data_send_status == false) {
+			//数据传输功能时按键无效
+			//button 1 pressed
+			key_pressed = 1;
+		}
 	}
 }
 
@@ -674,11 +683,18 @@ static bool lis3dh_flag = 0;
 //周期事件处理函数
 static void period_cycle_process(void * p_context)
 {
-	static uint32_t lis3dh_timer = 0;
-	static uint8_t key_timer = 0;
-	uint8_t key_status;
+	static uint32_t lis3dh_timer = 0;//三轴传感器采样频率
+	static uint8_t key_timer = 0;	//按键计时器
+	uint8_t key_status;             //按键状态
+	static uint16_t angle_timer = 0;	//角度采样频率
+	static uint16_t data_send_completed = 0; //用于传输数据结束后关闭蓝牙连接
+	static uint16_t alarm_timer_cont = 0; //当角度大于干涉角度时开始计时，超时后报警
+	queue_items_t item;
+	UTCTimeStruct time;
+	uint32_t err_code;
 	//模拟日历
 	TimeSeconds ++;
+
 
 	//按键处理
 	if (key_pressed == 1)
@@ -731,6 +747,36 @@ static void period_cycle_process(void * p_context)
 		lis3dh_timer = 0;
 		lis3dh_flag = 1;
 	}
+
+	if ((event_status&EVENT_DATA_SENDED) && (data_send_completed++ > 30))
+	{
+		//数据传输完成后30s断开蓝牙连接
+		event_status&= ~EVENT_DATA_SENDED;
+		data_send_completed = 0;
+		err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+        APP_ERROR_CHECK(err_code);
+	}
+	if ((work_status == true)&&(angle_timer++ >= ANGLE_SMAPLE_RATE))
+	{
+		if((Tilt > alarm_angle)&&(alarm_timer_cont++ > alarm_timer))
+		{//开始报警
+
+		}
+		else
+		{//取消报警
+
+		}
+		//存储角度值
+		ConvertUTCTime(&time,TimeSeconds);
+		item.year = time.year - 2000;
+		item.mon = time.month;
+		item.day = time.day;
+		item.hour = time.hour;
+		item.min = time.minutes;
+		item.second = time.seconds;
+		item.angle = (uint16_t)(Tilt*100);
+//		queue_push(&item);
+	}
 }
 //****************周期事件初始化*********************
 static void period_cycle_process_init(void)
@@ -742,6 +788,7 @@ static void period_cycle_process_init(void)
 
 //*****************倾角计算**************************
 #define PI 3.1415926
+//计算与水平面夹角，结果范围0~180
 static float calculateTilt_A(float ax, float ay, float az)
 {
 	float g = 9.80665;
@@ -771,56 +818,69 @@ static float calculateTilt_A(float ax, float ay, float az)
 
 //返回角度差
 //flag = 1重新获取角度基准值，flag = 0开始计算
+//以Y轴作为转动轴
 static float calculateTilt_run(float ax, float ay, float az)
 {
+	//初始基准角度值
 	static float First_Tiltangle = 0;
+	//上一时刻角度值
+//	static float last_Tiltangle = 0;
 	float Tiltangle = 0;
-	//三轴初始位置
+	//三轴初始位置 1:>=0, 0:<0
 	static uint8_t flag_x;
-	static uint8_t flag_y;
-	static uint8_t flag_z;
-	//转动趋势,用于辨别角度值变化是否超过180°
-	static uint8_t trend;
+//	static uint8_t flag_y;
+//	static uint8_t flag_z;
+	//转动趋势,顺时针转动1，逆时针转动0
+//	static uint8_t trend = 0;
 
 	if (tilt_init_flag == 1)
 	{
 		tilt_init_flag = 0;
 		First_Tiltangle = calculateTilt_A(ax,ay,az);
-		flag_x = ax < 0.0;
-		flag_y = ay < 0.0;
-		flag_z = az < 0.0;
-		trend = 0;
+		if (ax < 0)
+		{
+			First_Tiltangle = 360 - First_Tiltangle;
+		}
+		flag_x = (ax >= 0);
 	}
 	Tiltangle = calculateTilt_A(ax,ay,az);
-	if ((flag_x ^ (ax < 0.0)) || (flag_y ^ (ay < 0.0)) || (flag_z ^ (az < 0.0)))
+	if (ax < 0)
 	{
-		return (Tiltangle + First_Tiltangle);
+		Tiltangle = 360 - Tiltangle;
+	}
+	if (First_Tiltangle < Tiltangle)
+	{
+		if (flag_x ^ (ax >= 0))
+		{
+			return (360 -(Tiltangle - First_Tiltangle));
+		}
+		else
+			return (Tiltangle - First_Tiltangle);
 	}
 	else
 	{
-		if (Tiltangle >= First_Tiltangle)
+		if (flag_x ^ (ax >= 0))
 		{
-			return (Tiltangle - First_Tiltangle);
+			return (360 -(First_Tiltangle - Tiltangle));
 		}
 		else
-		{
 			return (First_Tiltangle - Tiltangle);
-		}
 	}
+
 }
 
-static float calculateTilt_B(float ax, float ay, float az)
-{
-	/*
-	*关于计算前后转动角度超值问题，记录前一时刻x,y,加速度正负，由正变负+90°
-	*/
-	float temp;
-	float Tiltangle = 0;
-	temp = sqrt(ax*ax + ay*ay) / az;
-	Tiltangle = atan(temp);
-	Tiltangle = Tiltangle/PI*180;
-	return Tiltangle;
-}
+//static float calculateTilt_B(float ax, float ay, float az)
+//{
+//	/*
+//	*关于计算前后转动角度超值问题，记录前一时刻x,y,加速度正负，由正变负+90°
+//	*/
+//	float temp;
+//	float Tiltangle = 0;
+//	temp = sqrt(ax*ax + ay*ay) / az;
+//	Tiltangle = atan(temp);
+//	Tiltangle = Tiltangle/PI*180;
+//	return Tiltangle;
+//}
 
 //报文处理函数
 static void message_process(uint8_t *ch)
@@ -848,11 +908,10 @@ static void message_process(uint8_t *ch)
 		TimeSeconds = ConvertUTCSecs(&tm);
 		//发送响应报文
 		data_array[0] = 0xA5;
-		data_array[1] = 0x02;
-		data_array[2] = 0x01;
-		data_array[3] = 0x01;
-		data_array[4] = 0x80;
-		err_code = ble_nus_send_string(&m_nus, data_array, 5);
+		data_array[1] = 0x01;
+		data_array[2] = CMD_SET_TIME;
+		data_array[3] = 0x80;
+		err_code = ble_nus_send_string(&m_nus, data_array, 4);
         if (err_code != NRF_ERROR_INVALID_STATE)
         {
             APP_ERROR_CHECK(err_code);
@@ -860,15 +919,72 @@ static void message_process(uint8_t *ch)
 		break;
 	case CMD_REQUEST_DATA:
 		//开始上传数据
+		data_send_status = true;
 		break;
 	case CMD_SET_ALARM:
 		//设置干涉条件
+		alarm_angle = ch[3];
+		alarm_timer = ch[4];
+		//发送响应报文
+		data_array[0] = 0xA5;
+		data_array[1] = 0x01;
+		data_array[2] = CMD_SET_ALARM;
+		data_array[3] = 0x80;
+		err_code = ble_nus_send_string(&m_nus, data_array, 4);
+        if (err_code != NRF_ERROR_INVALID_STATE)
+        {
+            APP_ERROR_CHECK(err_code);
+        }
 		break;
 	default:
 		break;
 	}
 }
 
+//队列测试代码
+uint8_t test[100];
+extern pstorage_handle_t block_id;
+void queue_test(void)
+{
+	uint8_t i = 0;
+	uint8_t printf_buffer[26];
+	queue_items_t item;
+	pstorage_handle_t dest_block_id;
+	memset(&item, 0x00, sizeof(queue_items_t));
+
+	sprintf(printf_buffer,"%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
+					queue_entries.tx_point);
+		simple_uart_putstring(printf_buffer);
+
+	for(i = 0; i< 10; i++)
+	{
+		queue_push(&item);
+		item.year ++;
+	}
+	memset(&item, 0x00, sizeof(queue_items_t));
+	for(i = 0; i < 10; i++)
+	{
+		if(queue_pop(&item))
+		{
+			sprintf(printf_buffer,"end\r\n");
+			simple_uart_putstring(printf_buffer);
+			break;
+		}
+		else 
+		{
+			sprintf(printf_buffer,"%d\r\n",item.year);
+			simple_uart_putstring(printf_buffer);
+		}
+	}
+
+	queue_init();
+	sprintf(printf_buffer,"%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
+				queue_entries.tx_point);
+	simple_uart_putstring(printf_buffer);
+	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
+	pstorage_load(test, &dest_block_id, sizeof(test),0);
+
+}
 /**@brief  Application main function.
  */
 int main(void)
@@ -876,10 +992,12 @@ int main(void)
     // Initialize
 //    uint8_t data;
 	AxesRaw_t Axes_Raw_Data = {0};
-	uint8_t buffer[26];
+	uint8_t printf_buffer[26];
 	uint8_t response;
 	float ax,ay,az;
-	float Tilt;
+	queue_items_t item;
+	uint8_t data_array[20];
+	uint32_t err_code;
     leds_init();
     timers_init();
     uart_init();
@@ -903,6 +1021,7 @@ int main(void)
 //	simple_uart_put(data);
 
 	LIS3DH_Init();
+	queue_test();
 
     // Enter main loop
     for (;;)
@@ -914,20 +1033,62 @@ int main(void)
 				ax = Axes_Raw_Data.AXIS_X/16384.0;
 				ay = Axes_Raw_Data.AXIS_Y/16384.0;
 				az = Axes_Raw_Data.AXIS_Z/16384.0;
-				sprintf((char *)buffer, "X=%6f Y=%6f Z=%6f \r\n",
+				sprintf((char *)printf_buffer, "X=%6f Y=%6f Z=%6f \r\n",
 					ax,ay,az);
-				simple_uart_putstring(buffer);
+				simple_uart_putstring(printf_buffer);
 				Tilt = calculateTilt_run(ax,ay,az);
-
-//				Tilt = calculateTilt_B(ax,ay,az);
-				sprintf((char *)buffer, "Tilt = %6f \r\n", Tilt);
-				simple_uart_putstring(buffer);
+				sprintf((char *)printf_buffer, "Tilt = %6f \r\n", Tilt);
+				simple_uart_putstring(printf_buffer);
 			}
 		}
 		if (message_received == true)
 		{//有数据接收
 			message_received = false;
-			message_process(data_buff);
+			message_process(rec_data_buffer);
+		}
+
+		if (data_send_status == true)
+		{//开始发送数据
+			if (queue_pop(&item))
+			{
+				//发送完成
+				data_send_status = false;
+				//led常亮
+				nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
+				event_status |= EVENT_DATA_SENDED;
+				//发送传输完成报文
+				data_array[0] = 0xA5;
+				data_array[1] = 0x01;
+				data_array[2] = CMD_SEND_DATA_COMPLETED;
+				data_array[3] = 0x80;
+				err_code = ble_nus_send_string(&m_nus, data_array, 4);
+		        if (err_code != NRF_ERROR_INVALID_STATE)
+		        {
+		            APP_ERROR_CHECK(err_code);
+		        }
+			}
+			else
+			{
+				//传输数据是led闪烁
+				nrf_gpio_pin_toggle(CONNECTED_LED_PIN_NO);
+				data_array[0] = 0xA5;
+				data_array[1] = 0x09;
+				data_array[2] = CMD_SEND_DATA;
+				data_array[3] = item.year;
+				data_array[4] = item.mon;
+				data_array[5] = item.day;
+				data_array[6] = item.hour;
+				data_array[7] = item.min;
+				data_array[8] = item.second;
+				data_array[9] = (uint8_t)(item.angle & 0x00ff);
+				data_array[10] = (uint8_t)((item.angle >> 8) & 0x00ff);
+				data_array[11] = 0x80;
+				err_code = ble_nus_send_string(&m_nus, data_array, 4);
+		        while (err_code != NRF_ERROR_INVALID_STATE)
+		        {
+		            err_code = ble_nus_send_string(&m_nus, data_array, 4);
+		        }
+			}
 		}
         power_manage();
     }
