@@ -369,7 +369,7 @@
               <MiscControls></MiscControls>
               <Define>BOARD_PCA10001 NRF51,DEBUG_NRF_USER, BLE_STACK_SUPPORT_REQD SPI_MASTER_1_ENABLE</Define>
               <Undefine></Undefine>
-              <IncludePath>..;..\Include;..\Include\app_common;..\Include\ble;..\Include\ble\ble_services;..\Include\s110;..\Include\sd_common;..\Include\serialization\connectivity;..\User\Inc</IncludePath>
+              <IncludePath>..;..\Include;..\Include\app_common;..\Include\ble;..\Include\ble\ble_services;..\Include\s110;..\Include\sd_common;..\Include\serialization\connectivity;..\Include\ble\device_manager;..\Include\sdk;..\User\Inc</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -491,6 +491,11 @@
               <FileName>app_gpiote.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Source\app_common\app_gpiote.c</FilePath>
+            </File>
+            <File>
+              <FileName>device_manager_peripheral.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Source\ble\device_manager\device_manager_peripheral.c</FilePath>
             </File>
           </Files>
         </Group>

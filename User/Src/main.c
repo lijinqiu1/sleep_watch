@@ -45,6 +45,7 @@
 #include "queue.h"
 #include "pstorage.h"
 #include "app_gpiote.h"
+#include "device_manager.h"
 
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
@@ -75,9 +76,9 @@
 #define BUTTON_DETECTION_DELAY          APP_TIMER_TICKS(50, APP_TIMER_PRESCALER)    /**< Delay from a GPIOTE event until a button is reported as pushed (in number of timer ticks). */
 
 #define SEC_PARAM_TIMEOUT               30                                          /**< Timeout for Pairing Request or Security Request (in seconds). */
-#define SEC_PARAM_BOND                  1                                           /**< Perform bonding. */
-#define SEC_PARAM_MITM                  0                                           /**< Man In The Middle protection not required. */
-#define SEC_PARAM_IO_CAPABILITIES       BLE_GAP_IO_CAPS_NONE                        /**< No I/O capabilities. */
+#define SEC_PARAM_BOND                  0                                           /**< Perform bonding. */
+#define SEC_PARAM_MITM                  1                                           /**< Man In The Middle protection not required. */
+#define SEC_PARAM_IO_CAPABILITIES       BLE_GAP_IO_CAPS_DISPLAY_ONLY                /**< No I/O capabilities. */
 #define SEC_PARAM_OOB                   0                                           /**< Out Of Band data not available. */
 #define SEC_PARAM_MIN_KEY_SIZE          7                                           /**< Minimum encryption key size. */
 #define SEC_PARAM_MAX_KEY_SIZE          16                                          /**< Maximum encryption key size. */
@@ -91,20 +92,32 @@
 #define ANGLE_SMAPLE_RATE				300											/**< 角度数据采样频率 单位:秒 >**/
 //gpiote
 #define MAX_USERS						1
+//蓝牙拦截配对密码
+#define PAIR_PASS_WORD                  "123456"
 
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
 static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
 static ble_nus_t                        m_nus;                                      /**< Structure to identify the Nordic UART Service. */
+static dm_application_instance_t        m_app_handle;                              /**< Application identifier allocated by device manager */
 
 //gpiote user identifier
 static app_gpiote_user_id_t gpiote_user_id;
 static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
 
+//周期性时间
+static app_timer_id_t p_timer;
+//配对password
+static  dm_handle_t                      m_dm_handle;                                       /**< Identifes the peer that is currently connected. */
+static  app_timer_id_t m_sec_req_timer_id;
+#define SECURITY_REQUEST_DELAY          APP_TIMER_TICKS(100, APP_TIMER_PRESCALER)  /**< Delay after connection until Security Request is sent, if necessary (ticks). */
 /***********************************事件定义***************************************/
 #define EVENT_KEY_PRESSED               (uint32_t)(0x00000001 << 0)                  /**< 按键事件 >**/
 #define EVENT_MESSAGE_RECEIVED          (uint32_t)(0x00000001 << 1)					 /**< 通信事件 >**/
 #define EVENT_DATA_SENDING				(uint32_t)(0x00000001 << 2)					 /**< 数据发送事件 >**/
 #define EVENT_DATA_SENDED               (uint32_t)(0x00000001 << 3)					 /**< 数据发送完成事件 >**/
+
+static void period_cycle_process(void * p_context);
+
 static uint32_t event_status = 0;      //时间存储变量
 static bool key_pressed = false;         //记录按键事件
 static bool adv_status = false;          //广播状态
@@ -146,6 +159,9 @@ void app_error_handler(uint32_t error_code, uint32_t line_num, const uint8_t * p
     //                any communication.
     //                Use with care. Un-comment the line below to use.
     // ble_debug_assert_handler(error_code, line_num, p_file_name);
+	char printf_buffer[30];
+	sprintf((char *)printf_buffer, "%d %d %s\r\n", error_code,line_num,p_file_name);
+	simple_uart_putstring(printf_buffer);
 
     // On assert, the system can only recover with a reset.
     NVIC_SystemReset();
@@ -187,8 +203,15 @@ static void leds_init(void)
  */
 static void timers_init(void)
 {
+	uint32_t err_code;
     // Initialize timer module
     APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_MAX_TIMERS, APP_TIMER_OP_QUEUE_SIZE, false);
+
+	err_code = app_timer_create(&p_timer,APP_TIMER_MODE_REPEATED,period_cycle_process);
+	APP_ERROR_CHECK(err_code);
+
+	err_code = app_timer_start(p_timer,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -202,6 +225,7 @@ static void gap_params_init(void)
     uint32_t                err_code;
     ble_gap_conn_params_t   gap_conn_params;
     ble_gap_conn_sec_mode_t sec_mode;
+	ble_opt_t      static_options;
 
     BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
 
@@ -219,6 +243,11 @@ static void gap_params_init(void)
 
     err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
     APP_ERROR_CHECK(err_code);
+	//初始化蓝牙匹配码功能
+	uint8_t passkey[] = PAIR_PASS_WORD;
+	static_options.gap.passkey.p_passkey = passkey;
+	err_code = sd_ble_opt_set(BLE_GAP_OPT_PASSKEY, &static_options);
+	APP_ERROR_CHECK(err_code);
 }
 
 
@@ -373,7 +402,33 @@ static void advertising_start(void)
     err_code = sd_ble_gap_adv_start(&adv_params);
     APP_ERROR_CHECK(err_code);
 }
+/**@brief Function for handling the Device Manager events.
+ *
+ * @param[in]   p_evt   Data associated to the device manager event.
+ */
+static uint32_t device_manager_evt_handler(dm_handle_t const    * p_handle,
+                                           dm_event_t const     * p_event,
+                                           api_result_t           event_result)
+{
+    uint32_t err_code = NRF_SUCCESS;
 
+    m_dm_handle = *p_handle;
+    APP_ERROR_CHECK(event_result);
+    switch (p_event->event_id)
+    {
+        case DM_EVT_CONNECTION:
+            // Start Security Request timer.
+            if (m_dm_handle.device_id != DM_INVALID_ID)
+            {
+//                err_code = app_timer_start(m_sec_req_timer_id, SECURITY_REQUEST_DELAY, NULL);
+//                APP_ERROR_CHECK(err_code);
+            }
+            break;
+        default:
+            break;
+    }
+    return NRF_SUCCESS;
+}
 /**@brief       Function for the Application's S110 SoftDevice event handler.
  *
  * @param[in]   p_ble_evt   S110 SoftDevice event.
@@ -390,7 +445,8 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
 			adv_status = false;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
-
+//			err_code = sd_ble_gap_authenticate(m_conn_handle,&m_sec_params);
+//			APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
@@ -415,6 +471,11 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
 
         case BLE_GAP_EVT_AUTH_STATUS:
             m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
+			if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
+			{
+				err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+				APP_ERROR_CHECK(err_code);
+			}
             break;
 
         case BLE_GAP_EVT_SEC_INFO_REQUEST:
@@ -465,6 +526,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
  */
 static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 {
+	dm_ble_evt_handler(p_ble_evt);
     ble_conn_params_on_ble_evt(p_ble_evt);
     ble_nus_on_ble_evt(&m_nus, p_ble_evt);
     on_ble_evt(p_ble_evt);
@@ -512,6 +574,37 @@ static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event
 	}
 }
 
+
+
+/**@brief Function for the Device Manager initialization.
+ */
+static void device_manager_init(void)
+{
+    uint32_t                err_code;
+    dm_init_param_t         init_data;
+    dm_application_param_t  register_param;
+
+    // Clear all bonded centrals if the Bonds Delete button is pushed.
+    init_data.clear_persistent_data = 0;
+
+    err_code = dm_init(&init_data);
+    APP_ERROR_CHECK(err_code);
+
+    memset(&register_param.sec_param, 0, sizeof(ble_gap_sec_params_t));
+
+    register_param.sec_param.timeout      = SEC_PARAM_TIMEOUT;
+    register_param.sec_param.bond         = SEC_PARAM_BOND;
+    register_param.sec_param.mitm         = SEC_PARAM_MITM;
+    register_param.sec_param.io_caps      = SEC_PARAM_IO_CAPABILITIES;
+    register_param.sec_param.oob          = SEC_PARAM_OOB;
+    register_param.sec_param.min_key_size = SEC_PARAM_MIN_KEY_SIZE;
+    register_param.sec_param.max_key_size = SEC_PARAM_MAX_KEY_SIZE;
+    register_param.evt_handler            = device_manager_evt_handler;
+    register_param.service_type           = DM_PROTOCOL_CNTXT_GATT_SRVR_ID;
+
+    err_code = dm_register(&m_app_handle, &register_param);
+    APP_ERROR_CHECK(err_code);
+}
 
 /**@brief  Function for configuring the buttons.
  */
@@ -678,7 +771,6 @@ static void LIS3DH_Init(void)
 	LIS3DH_SetAxis(LIS3DH_X_ENABLE | LIS3DH_Y_ENABLE | LIS3DH_Z_ENABLE);
 }
 //****************周期事件处理函数*********************
-static app_timer_id_t p_timer;
 static bool lis3dh_flag = 0;
 //周期事件处理函数
 static void period_cycle_process(void * p_context)
@@ -777,13 +869,6 @@ static void period_cycle_process(void * p_context)
 		item.angle = (uint16_t)(Tilt*100);
 //		queue_push(&item);
 	}
-}
-//****************周期事件初始化*********************
-static void period_cycle_process_init(void)
-{
-	app_timer_create(&p_timer,APP_TIMER_MODE_REPEATED,period_cycle_process);
-
-	app_timer_start(p_timer,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
 }
 
 //*****************倾角计算**************************
@@ -946,41 +1031,41 @@ uint8_t test[100];
 extern pstorage_handle_t block_id;
 void queue_test(void)
 {
-	uint8_t i = 0;
-	uint8_t printf_buffer[26];
+	uint16_t i = 0;
+	char printf_buffer[26];
 	queue_items_t item;
 	pstorage_handle_t dest_block_id;
 	memset(&item, 0x00, sizeof(queue_items_t));
 
 	sprintf(printf_buffer,"%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
 					queue_entries.tx_point);
-		simple_uart_putstring(printf_buffer);
+		simple_uart_putstring((const uint8_t *)printf_buffer);
 
-	for(i = 0; i< 10; i++)
+	for(i = 0; i< 1045; i++)
 	{
 		queue_push(&item);
-		item.year ++;
+		item.angle ++;
 	}
 	memset(&item, 0x00, sizeof(queue_items_t));
-	for(i = 0; i < 10; i++)
+	for(i = 0; i < 1045; i++)
 	{
 		if(queue_pop(&item))
 		{
 			sprintf(printf_buffer,"end\r\n");
-			simple_uart_putstring(printf_buffer);
+			simple_uart_putstring((const uint8_t *)printf_buffer);
 			break;
 		}
-		else 
+		else
 		{
-			sprintf(printf_buffer,"%d\r\n",item.year);
-			simple_uart_putstring(printf_buffer);
+			sprintf(printf_buffer,"%d\r\n",item.angle);
+			simple_uart_putstring((const uint8_t *)printf_buffer);
 		}
+        power_manage();
 	}
 
-	queue_init();
 	sprintf(printf_buffer,"%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
 				queue_entries.tx_point);
-	simple_uart_putstring(printf_buffer);
+	simple_uart_putstring((const uint8_t *)printf_buffer);
 	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
 	pstorage_load(test, &dest_block_id, sizeof(test),0);
 
@@ -1002,17 +1087,16 @@ int main(void)
     timers_init();
     uart_init();
     ble_stack_init();
+	//flash初始化
+	queue_init();
+	device_manager_init();
     gap_params_init();
     services_init();
     advertising_init();
     conn_params_init();
     sec_params_init();
-    simple_uart_putstring(START_STRING);
+    simple_uart_putstring((const uint8_t *)START_STRING);
 	SPI_Init();
-	//周期处理线程
-	period_cycle_process_init();
-	//flash初始化
-	queue_init();
 	//gpiote初始化
     buttons_init();
 //    advertising_start();
@@ -1021,7 +1105,7 @@ int main(void)
 //	simple_uart_put(data);
 
 	LIS3DH_Init();
-	queue_test();
+//	queue_test();
 
     // Enter main loop
     for (;;)
