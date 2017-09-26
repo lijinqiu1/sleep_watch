@@ -46,7 +46,7 @@
 #include "pstorage.h"
 #include "app_gpiote.h"
 #include "device_manager.h"
-
+#include "app_trace.h"
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -62,7 +62,7 @@
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
 
 #define APP_TIMER_PRESCALER             0                                           /**< Value of the RTC1 PRESCALER register. */
-#define APP_TIMER_MAX_TIMERS            2                                           /**< Maximum number of simultaneously created timers. */
+#define APP_TIMER_MAX_TIMERS            3                                           /**< Maximum number of simultaneously created timers. */
 #define APP_TIMER_OP_QUEUE_SIZE         4                                           /**< Size of timer operation queues. */
 
 #define MIN_CONN_INTERVAL               16                                          /**< Minimum acceptable connection interval (20 ms), Connection interval uses 1.25 ms units. */
@@ -76,7 +76,7 @@
 #define BUTTON_DETECTION_DELAY          APP_TIMER_TICKS(50, APP_TIMER_PRESCALER)    /**< Delay from a GPIOTE event until a button is reported as pushed (in number of timer ticks). */
 
 #define SEC_PARAM_TIMEOUT               30                                          /**< Timeout for Pairing Request or Security Request (in seconds). */
-#define SEC_PARAM_BOND                  0                                           /**< Perform bonding. */
+#define SEC_PARAM_BOND                  1                                           /**< Perform bonding. */
 #define SEC_PARAM_MITM                  1                                           /**< Man In The Middle protection not required. */
 #define SEC_PARAM_IO_CAPABILITIES       BLE_GAP_IO_CAPS_DISPLAY_ONLY                /**< No I/O capabilities. */
 #define SEC_PARAM_OOB                   0                                           /**< Out Of Band data not available. */
@@ -99,7 +99,7 @@ static ble_gap_sec_params_t             m_sec_params;                           
 static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
 static ble_nus_t                        m_nus;                                      /**< Structure to identify the Nordic UART Service. */
 static dm_application_instance_t        m_app_handle;                              /**< Application identifier allocated by device manager */
-
+static bool                             m_memory_access_in_progress = false;        /**< Flag to keep track of ongoing operations on persistent memory. */
 //gpiote user identifier
 static app_gpiote_user_id_t gpiote_user_id;
 static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
@@ -109,7 +109,7 @@ static app_timer_id_t p_timer;
 //配对password
 static  dm_handle_t                      m_dm_handle;                                       /**< Identifes the peer that is currently connected. */
 static  app_timer_id_t m_sec_req_timer_id;
-#define SECURITY_REQUEST_DELAY          APP_TIMER_TICKS(100, APP_TIMER_PRESCALER)  /**< Delay after connection until Security Request is sent, if necessary (ticks). */
+#define SECURITY_REQUEST_DELAY          APP_TIMER_TICKS(1000, APP_TIMER_PRESCALER)  /**< Delay after connection until Security Request is sent, if necessary (ticks). */
 /***********************************事件定义***************************************/
 #define EVENT_KEY_PRESSED               (uint32_t)(0x00000001 << 0)                  /**< 按键事件 >**/
 #define EVENT_MESSAGE_RECEIVED          (uint32_t)(0x00000001 << 1)					 /**< 通信事件 >**/
@@ -124,10 +124,10 @@ static bool adv_status = false;          //广播状态
 static bool work_status = false;         //设备工作状态
 static bool message_received = false;  //信息接收
 static bool data_send_status = false;  //发送数据
+static bool ble_connect_status = false;  //蓝牙连接状态
 static uint8_t tilt_init_flag = false; //角度值初始化
 static float Tilt;                       //当前倾角变化值
 static uint8_t rec_data_buffer[20];      //缓存接收到的数据
-static bool ble_connect_status = false;  //蓝牙连接状态
 
 //干涉条件
 static uint8_t alarm_angle;//干涉角度
@@ -159,9 +159,7 @@ void app_error_handler(uint32_t error_code, uint32_t line_num, const uint8_t * p
     //                any communication.
     //                Use with care. Un-comment the line below to use.
     // ble_debug_assert_handler(error_code, line_num, p_file_name);
-	char printf_buffer[30];
-	sprintf((char *)printf_buffer, "%d %d %s\r\n", error_code,line_num,p_file_name);
-	simple_uart_putstring(printf_buffer);
+	printf("%d %d %s\r\n", (int32_t)error_code,line_num,p_file_name);
 
     // On assert, the system can only recover with a reset.
     NVIC_SystemReset();
@@ -193,7 +191,35 @@ static void leds_init(void)
 {
     nrf_gpio_cfg_output(ADVERTISING_LED_PIN_NO);
     nrf_gpio_cfg_output(CONNECTED_LED_PIN_NO);
-//	nrf_gpio_cfg_output(SPIM1_SS_PIN);
+}
+
+/**@brief Function for handling the Security Request timer timeout.
+ *
+ * @details This function will be called each time the Security Request timer expires.
+ *
+ * @param[in]   p_context   Pointer used for passing some arbitrary information (context) from the
+ *                          app_start_timer() call to the timeout handler.
+ */
+static void sec_req_timeout_handler(void * p_context)
+{
+    uint32_t             err_code;
+    dm_security_status_t status;
+	
+//	err_code = sd_ble_gap_authenticate(m_conn_handle,&m_sec_params);
+//	APP_ERROR_CHECK(err_code);
+	
+    if (m_conn_handle != BLE_CONN_HANDLE_INVALID)
+    {
+        err_code = dm_security_status_req(&m_dm_handle, &status);
+        APP_ERROR_CHECK(err_code);
+
+        // In case the link is secured by the peer during timeout, the request is not sent.
+        if (status == NOT_ENCRYPTED)
+        {
+            err_code = dm_security_setup_req(&m_dm_handle);
+            APP_ERROR_CHECK(err_code);
+        }
+    }
 }
 
 
@@ -207,8 +233,17 @@ static void timers_init(void)
     // Initialize timer module
     APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_MAX_TIMERS, APP_TIMER_OP_QUEUE_SIZE, false);
 
-	err_code = app_timer_create(&p_timer,APP_TIMER_MODE_REPEATED,period_cycle_process);
+	err_code = app_timer_create(&p_timer,
+		                        APP_TIMER_MODE_REPEATED,
+		                        period_cycle_process);
 	APP_ERROR_CHECK(err_code);
+
+	// Create Security Request timer.
+	err_code = app_timer_create(&m_sec_req_timer_id,
+								APP_TIMER_MODE_SINGLE_SHOT,
+								sec_req_timeout_handler);
+	APP_ERROR_CHECK(err_code);
+
 
 	err_code = app_timer_start(p_timer,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
 	APP_ERROR_CHECK(err_code);
@@ -420,8 +455,12 @@ static uint32_t device_manager_evt_handler(dm_handle_t const    * p_handle,
             // Start Security Request timer.
             if (m_dm_handle.device_id != DM_INVALID_ID)
             {
-//                err_code = app_timer_start(m_sec_req_timer_id, SECURITY_REQUEST_DELAY, NULL);
-//                APP_ERROR_CHECK(err_code);
+
+            }
+            else
+			{
+				err_code = app_timer_start(m_sec_req_timer_id, SECURITY_REQUEST_DELAY, NULL);
+            	APP_ERROR_CHECK(err_code);
             }
             break;
         default:
@@ -445,54 +484,15 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
 			adv_status = false;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
-//			err_code = sd_ble_gap_authenticate(m_conn_handle,&m_sec_params);
-//			APP_ERROR_CHECK(err_code);
+			err_code = app_timer_start(m_sec_req_timer_id, SECURITY_REQUEST_DELAY, NULL);
+            APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
             nrf_gpio_pin_clear(CONNECTED_LED_PIN_NO);
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
-
-//            advertising_start();
-
+			advertising_start();
             break;
-
-        case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
-            err_code = sd_ble_gap_sec_params_reply(m_conn_handle,
-                                                   BLE_GAP_SEC_STATUS_SUCCESS,
-                                                   &m_sec_params);
-            APP_ERROR_CHECK(err_code);
-            break;
-
-        case BLE_GATTS_EVT_SYS_ATTR_MISSING:
-            err_code = sd_ble_gatts_sys_attr_set(m_conn_handle, NULL, 0);
-            APP_ERROR_CHECK(err_code);
-            break;
-
-        case BLE_GAP_EVT_AUTH_STATUS:
-            m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
-			if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
-			{
-				err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
-				APP_ERROR_CHECK(err_code);
-			}
-            break;
-
-        case BLE_GAP_EVT_SEC_INFO_REQUEST:
-            p_enc_info = &m_auth_status.periph_keys.enc_info;
-            if (p_enc_info->div == p_ble_evt->evt.gap_evt.params.sec_info_request.div)
-            {
-                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, p_enc_info, NULL);
-                APP_ERROR_CHECK(err_code);
-            }
-            else
-            {
-                // No keys found for this device
-                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, NULL, NULL);
-                APP_ERROR_CHECK(err_code);
-            }
-            break;
-
         case BLE_GAP_EVT_TIMEOUT:
             if (p_ble_evt->evt.gap_evt.params.timeout.src == BLE_GAP_TIMEOUT_SRC_ADVERTISEMENT)
             {
@@ -508,13 +508,76 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
                 APP_ERROR_CHECK(err_code);
             }
             break;
+#if 0
+			case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
+            err_code = sd_ble_gap_sec_params_reply(m_conn_handle,
+                                                   BLE_GAP_SEC_STATUS_SUCCESS,
+                                                   &m_sec_params);
+            APP_ERROR_CHECK(err_code);
+            break;
 
+        case BLE_GATTS_EVT_SYS_ATTR_MISSING:
+            err_code = sd_ble_gatts_sys_attr_set(m_conn_handle, NULL, 0);
+            APP_ERROR_CHECK(err_code);
+            break;
+		case BLE_GAP_EVT_SEC_INFO_REQUEST:
+            p_enc_info = &m_auth_status.periph_keys.enc_info;
+            if (p_enc_info->div == p_ble_evt->evt.gap_evt.params.sec_info_request.div)
+            {
+                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, p_enc_info, NULL);
+                APP_ERROR_CHECK(err_code);
+            }
+            else
+            {
+                // No keys found for this device
+                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, NULL, NULL);
+                APP_ERROR_CHECK(err_code);
+            }
+            break;
+#endif
+		case BLE_GAP_EVT_PASSKEY_DISPLAY:
+			// Don't send delayed Security Request if security procedure is already in progress.
+			err_code = app_timer_stop(m_sec_req_timer_id);
+			APP_ERROR_CHECK(err_code);
+			break;
+		case BLE_GAP_EVT_AUTH_STATUS:
+			m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
+			if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
+			{
+				err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+				APP_ERROR_CHECK(err_code);
+			}
+            break;
+        case BLE_GAP_EVT_CONN_SEC_UPDATE:
+
+            break;
         default:
             // No implementation needed.
             break;
     }
 }
 
+/**@brief Function for handling the Application's system events.
+ *
+ * @param[in]   sys_evt   system event.
+ */
+static void on_sys_evt(uint32_t sys_evt)
+{
+    switch (sys_evt)
+    {
+        case NRF_EVT_FLASH_OPERATION_SUCCESS:
+        case NRF_EVT_FLASH_OPERATION_ERROR:
+            if (m_memory_access_in_progress)
+            {
+                m_memory_access_in_progress = false;
+                advertising_start();
+            }
+            break;
+        default:
+            // No implementation needed.
+            break;
+    }
+}
 
 /**@brief       Function for dispatching a S110 SoftDevice event to all modules with a S110
  *              SoftDevice event handler.
@@ -535,6 +598,7 @@ static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 static void sys_evt_dispatch(uint32_t sys_evt)
 {
 	pstorage_sys_event_handler(sys_evt);
+	on_sys_evt(sys_evt);
 }
 /**@brief   Function for the S110 SoftDevice initialization.
  *
@@ -585,7 +649,7 @@ static void device_manager_init(void)
     dm_application_param_t  register_param;
 
     // Clear all bonded centrals if the Bonds Delete button is pushed.
-    init_data.clear_persistent_data = 0;
+    init_data.clear_persistent_data = true;
 
     err_code = dm_init(&init_data);
     APP_ERROR_CHECK(err_code);
@@ -642,19 +706,19 @@ static void power_manage(void)
 }
 
 
-/**@brief  Function for initializing the UART module.
- */
-static void uart_init(void)
-{
-    /**@snippet [UART Initialization] */
-    simple_uart_config(RTS_PIN_NUMBER, TX_PIN_NUMBER, CTS_PIN_NUMBER, RX_PIN_NUMBER, HWFC);
+///**@brief  Function for initializing the UART module.
+// */
+//static void uart_init(void)
+//{
+//    /**@snippet [UART Initialization] */
+//    simple_uart_config(RTS_PIN_NUMBER, TX_PIN_NUMBER, CTS_PIN_NUMBER, RX_PIN_NUMBER, HWFC);
 
-    NRF_UART0->INTENSET = UART_INTENSET_RXDRDY_Enabled << UART_INTENSET_RXDRDY_Pos;
+//    NRF_UART0->INTENSET = UART_INTENSET_RXDRDY_Enabled << UART_INTENSET_RXDRDY_Pos;
 
-    NVIC_SetPriority(UART0_IRQn, APP_IRQ_PRIORITY_LOW);
-    NVIC_EnableIRQ(UART0_IRQn);
-    /**@snippet [UART Initialization] */
-}
+//    NVIC_SetPriority(UART0_IRQn, APP_IRQ_PRIORITY_LOW);
+//    NVIC_EnableIRQ(UART0_IRQn);
+//    /**@snippet [UART Initialization] */
+//}
 
 
 /**@brief   Function for handling UART interrupts.
@@ -663,30 +727,30 @@ static void uart_init(void)
  *          The string will be be sent over BLE when the last character received was a 'new line'
  *          i.e '\n' (hex 0x0D) or if the string has reached a length of @ref NUS_MAX_DATA_LENGTH.
  */
-void UART0_IRQHandler(void)
-{
-    static uint8_t data_array[BLE_NUS_MAX_DATA_LEN];
-    static uint8_t index = 0;
-    uint32_t err_code;
+//void UART0_IRQHandler(void)
+//{
+//    static uint8_t data_array[BLE_NUS_MAX_DATA_LEN];
+//    static uint8_t index = 0;
+//    uint32_t err_code;
 
-    /**@snippet [Handling the data received over UART] */
+//    /**@snippet [Handling the data received over UART] */
 
-    data_array[index] = simple_uart_get();
-    index++;
+//    data_array[index] = simple_uart_get();
+//    index++;
 
-    if ((data_array[index - 1] == '\n') || (index >= (BLE_NUS_MAX_DATA_LEN - 1)))
-    {
-        err_code = ble_nus_send_string(&m_nus, data_array, index + 1);
-        if (err_code != NRF_ERROR_INVALID_STATE)
-        {
-            APP_ERROR_CHECK(err_code);
-        }
+//    if ((data_array[index - 1] == '\n') || (index >= (BLE_NUS_MAX_DATA_LEN - 1)))
+//    {
+//        err_code = ble_nus_send_string(&m_nus, data_array, index + 1);
+//        if (err_code != NRF_ERROR_INVALID_STATE)
+//        {
+//            APP_ERROR_CHECK(err_code);
+//        }
 
-        index = 0;
-    }
+//        index = 0;
+//    }
 
-    /**@snippet [Handling the data received over UART] */
-}
+//    /**@snippet [Handling the data received over UART] */
+//}
 /******************SPI Driver**********************/
 static bool transmission_completed = 0; //spi传输状态
 static uint8_t rx_buffer[2];
@@ -804,7 +868,8 @@ static void period_cycle_process(void * p_context)
 				//短按
 				if (adv_status == true)
 				{
-					sd_ble_gap_adv_stop();
+					err_code = sd_ble_gap_adv_stop();
+					APP_ERROR_CHECK(err_code);
 					adv_status = false;
 				}
 				if (work_status == false)
@@ -1032,14 +1097,12 @@ extern pstorage_handle_t block_id;
 void queue_test(void)
 {
 	uint16_t i = 0;
-	char printf_buffer[26];
 	queue_items_t item;
 	pstorage_handle_t dest_block_id;
 	memset(&item, 0x00, sizeof(queue_items_t));
 
-	sprintf(printf_buffer,"%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
+	app_trace_log("%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
 					queue_entries.tx_point);
-		simple_uart_putstring((const uint8_t *)printf_buffer);
 
 	for(i = 0; i< 1045; i++)
 	{
@@ -1051,21 +1114,18 @@ void queue_test(void)
 	{
 		if(queue_pop(&item))
 		{
-			sprintf(printf_buffer,"end\r\n");
-			simple_uart_putstring((const uint8_t *)printf_buffer);
+			printf("end\r\n");
 			break;
 		}
 		else
 		{
-			sprintf(printf_buffer,"%d\r\n",item.angle);
-			simple_uart_putstring((const uint8_t *)printf_buffer);
+			app_trace_log("%d\r\n",item.angle);
 		}
         power_manage();
 	}
 
-	sprintf(printf_buffer,"%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
+	app_trace_log("%d  %d  %d\r\n",queue_entries.entries,queue_entries.rx_point,\
 				queue_entries.tx_point);
-	simple_uart_putstring((const uint8_t *)printf_buffer);
 	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
 	pstorage_load(test, &dest_block_id, sizeof(test),0);
 
@@ -1077,7 +1137,6 @@ int main(void)
     // Initialize
 //    uint8_t data;
 	AxesRaw_t Axes_Raw_Data = {0};
-	uint8_t printf_buffer[26];
 	uint8_t response;
 	float ax,ay,az;
 	queue_items_t item;
@@ -1085,7 +1144,7 @@ int main(void)
 	uint32_t err_code;
     leds_init();
     timers_init();
-    uart_init();
+    app_trace_init();
     ble_stack_init();
 	//flash初始化
 	queue_init();
@@ -1095,11 +1154,11 @@ int main(void)
     advertising_init();
     conn_params_init();
     sec_params_init();
-    simple_uart_putstring((const uint8_t *)START_STRING);
+    printf(START_STRING);
 	SPI_Init();
 	//gpiote初始化
     buttons_init();
-//    advertising_start();
+    advertising_start();
 
 //	LIS3DH_GetWHO_AM_I(&data);
 //	simple_uart_put(data);
@@ -1110,70 +1169,68 @@ int main(void)
     // Enter main loop
     for (;;)
     {
-		if (lis3dh_flag == 1) {
-			lis3dh_flag = 0;
-			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
-			if (response == 1) {
-				ax = Axes_Raw_Data.AXIS_X/16384.0;
-				ay = Axes_Raw_Data.AXIS_Y/16384.0;
-				az = Axes_Raw_Data.AXIS_Z/16384.0;
-				sprintf((char *)printf_buffer, "X=%6f Y=%6f Z=%6f \r\n",
-					ax,ay,az);
-				simple_uart_putstring(printf_buffer);
-				Tilt = calculateTilt_run(ax,ay,az);
-				sprintf((char *)printf_buffer, "Tilt = %6f \r\n", Tilt);
-				simple_uart_putstring(printf_buffer);
-			}
-		}
-		if (message_received == true)
-		{//有数据接收
-			message_received = false;
-			message_process(rec_data_buffer);
-		}
+//		if (lis3dh_flag == 1) {
+//			lis3dh_flag = 0;
+//			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
+//			if (response == 1) {
+//				ax = Axes_Raw_Data.AXIS_X/16384.0;
+//				ay = Axes_Raw_Data.AXIS_Y/16384.0;
+//				az = Axes_Raw_Data.AXIS_Z/16384.0;
+//				app_trace_log("X=%6f Y=%6f Z=%6f \r\n",
+//					ax,ay,az);
+//				Tilt = calculateTilt_run(ax,ay,az);
+//				app_trace_log("Tilt = %6f \r\n", Tilt);
+//			}
+//		}
+//		if (message_received == true)
+//		{//有数据接收
+//			message_received = false;
+//			message_process(rec_data_buffer);
+//		}
 
-		if (data_send_status == true)
-		{//开始发送数据
-			if (queue_pop(&item))
-			{
-				//发送完成
-				data_send_status = false;
-				//led常亮
-				nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
-				event_status |= EVENT_DATA_SENDED;
-				//发送传输完成报文
-				data_array[0] = 0xA5;
-				data_array[1] = 0x01;
-				data_array[2] = CMD_SEND_DATA_COMPLETED;
-				data_array[3] = 0x80;
-				err_code = ble_nus_send_string(&m_nus, data_array, 4);
-		        if (err_code != NRF_ERROR_INVALID_STATE)
-		        {
-		            APP_ERROR_CHECK(err_code);
-		        }
-			}
-			else
-			{
-				//传输数据是led闪烁
-				nrf_gpio_pin_toggle(CONNECTED_LED_PIN_NO);
-				data_array[0] = 0xA5;
-				data_array[1] = 0x09;
-				data_array[2] = CMD_SEND_DATA;
-				data_array[3] = item.year;
-				data_array[4] = item.mon;
-				data_array[5] = item.day;
-				data_array[6] = item.hour;
-				data_array[7] = item.min;
-				data_array[8] = item.second;
-				data_array[9] = (uint8_t)(item.angle & 0x00ff);
-				data_array[10] = (uint8_t)((item.angle >> 8) & 0x00ff);
-				data_array[11] = 0x80;
-				err_code = ble_nus_send_string(&m_nus, data_array, 4);
-		        while (err_code != NRF_ERROR_INVALID_STATE)
-		        {
-		            err_code = ble_nus_send_string(&m_nus, data_array, 4);
-		        }
-			}
-		}
+//		if (data_send_status == true)
+//		{//开始发送数据
+//			if (queue_pop(&item))
+//			{
+//				//发送完成
+//				data_send_status = false;
+//				//led常亮
+//				nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
+//				event_status |= EVENT_DATA_SENDED;
+//				//发送传输完成报文
+//				data_array[0] = 0xA5;
+//				data_array[1] = 0x01;
+//				data_array[2] = CMD_SEND_DATA_COMPLETED;
+//				data_array[3] = 0x80;
+//				err_code = ble_nus_send_string(&m_nus, data_array, 4);
+//		        if (err_code != NRF_ERROR_INVALID_STATE)
+//		        {
+//		            APP_ERROR_CHECK(err_code);
+//		        }
+//			}
+//			else
+//			{
+//				//传输数据是led闪烁
+//				nrf_gpio_pin_toggle(CONNECTED_LED_PIN_NO);
+//				data_array[0] = 0xA5;
+//				data_array[1] = 0x09;
+//				data_array[2] = CMD_SEND_DATA;
+//				data_array[3] = item.year;
+//				data_array[4] = item.mon;
+//				data_array[5] = item.day;
+//				data_array[6] = item.hour;
+//				data_array[7] = item.min;
+//				data_array[8] = item.second;
+//				data_array[9] = (uint8_t)(item.angle & 0x00ff);
+//				data_array[10] = (uint8_t)((item.angle >> 8) & 0x00ff);
+//				data_array[11] = 0x80;
+//				err_code = ble_nus_send_string(&m_nus, data_array, 4);
+//		        while (err_code != NRF_ERROR_INVALID_STATE)
+//		        {
+//		            err_code = ble_nus_send_string(&m_nus, data_array, 4);
+//		        }
+//			}
+//		}
         power_manage();
     }
 }

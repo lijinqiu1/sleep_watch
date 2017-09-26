@@ -64,7 +64,7 @@
  *       be stored. In such cases, application will be notified with DM_DEVICE_CONTEXT_FULL 
  *       as event result at the completion of the security procedure.
  */
-#define DEVICE_MANAGER_MAX_BONDS         7
+#define DEVICE_MANAGER_MAX_BONDS         2
 
 
 /**
@@ -89,7 +89,7 @@
  * @note If set to zero, its an indication that application context is not required to be managed
  *       by the module.
  */
-#define DEVICE_MANAGER_APP_CONTEXT_SIZE    4
+#define DEVICE_MANAGER_APP_CONTEXT_SIZE    0
 
 /* @} */
 /* @} */
