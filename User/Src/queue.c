@@ -7,6 +7,8 @@
 #include "pstorage.h"
 
 //变量声明
+//系统参数信息
+system_params_t system_params;
 //队列信息变量
 queue_t queue_entries;
 //当前保存的block位置
@@ -49,20 +51,20 @@ void queue_init(void)
 	pstorage_handle_t dest_block_id;
 	uint32_t err_code;
 	pstorage_module_param_t module_param;
-	
+
 	module_param.block_count = FLASH_BLOCK_NUM;
 	module_param.block_size = FLASH_BLOCK;
 	module_param.cb = flash_cb;
-	
+
 	err_code = pstorage_init();
     APP_ERROR_CHECK(err_code);
-	
+
 	err_code = pstorage_register(&module_param, &block_id);
 	APP_ERROR_CHECK(err_code);
-	
+
 	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
 	pstorage_load((uint8_t*)&queue_entries, &dest_block_id, sizeof(queue_t),0);
-	
+
 	if (queue_entries.entries == 0xFFFF && queue_entries.tx_point == 0xFFFF \
 		&& queue_entries.rx_point == 0xFFFF) {
 	//第一次开机flash里面没有存储数据

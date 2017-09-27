@@ -61,14 +61,21 @@
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
 
+#define APP_ADV_INTERVAL_FAST            MSEC_TO_UNITS(25, UNIT_0_625_MS)               /**< Fast advertising interval (25 ms.). */
+#define APP_ADV_INTERVAL_SLOW            MSEC_TO_UNITS(2000, UNIT_0_625_MS)             /**< Slow advertising interval (2 seconds). */
+#define APP_FAST_ADV_TIMEOUT             30                                             /**< The duration of the fast advertising period (in seconds). */
+#define APP_SLOW_ADV_TIMEOUT             180                                            /**< The duration of the slow advertising period (in seconds). */
+#define APP_DIRECTED_ADV_TIMEOUT         5                                              /**< number of direct advertisement (each lasting 1.28seconds). */
+
+
 #define APP_TIMER_PRESCALER             0                                           /**< Value of the RTC1 PRESCALER register. */
 #define APP_TIMER_MAX_TIMERS            3                                           /**< Maximum number of simultaneously created timers. */
 #define APP_TIMER_OP_QUEUE_SIZE         4                                           /**< Size of timer operation queues. */
 
-#define MIN_CONN_INTERVAL               16                                          /**< Minimum acceptable connection interval (20 ms), Connection interval uses 1.25 ms units. */
-#define MAX_CONN_INTERVAL               60                                          /**< Maximum acceptable connection interval (75 ms), Connection interval uses 1.25 ms units. */
+#define MIN_CONN_INTERVAL               MSEC_TO_UNITS(7.5, UNIT_1_25_MS)            /**< Minimum acceptable connection interval (20 ms), Connection interval uses 1.25 ms units. */
+#define MAX_CONN_INTERVAL               MSEC_TO_UNITS(30, UNIT_1_25_MS)             /**< Maximum acceptable connection interval (75 ms), Connection interval uses 1.25 ms units. */
 #define SLAVE_LATENCY                   0                                           /**< slave latency. */
-#define CONN_SUP_TIMEOUT                400                                         /**< Connection supervisory timeout (4 seconds), Supervision Timeout uses 10 ms units. */
+#define CONN_SUP_TIMEOUT                MSEC_TO_UNITS(300, UNIT_10_MS)              /**< Connection supervisory timeout (4 seconds), Supervision Timeout uses 10 ms units. */
 #define FIRST_CONN_PARAMS_UPDATE_DELAY  APP_TIMER_TICKS(5000, APP_TIMER_PRESCALER)  /**< Time from initiating event (connect or start of notification) to first time sd_ble_gap_conn_param_update is called (5 seconds). */
 #define NEXT_CONN_PARAMS_UPDATE_DELAY   APP_TIMER_TICKS(30000, APP_TIMER_PRESCALER) /**< Time between each call to sd_ble_gap_conn_param_update after the first call (30 seconds). */
 #define MAX_CONN_PARAMS_UPDATE_COUNT    3                                           /**< Number of attempts before giving up the connection parameter negotiation. */
@@ -99,7 +106,12 @@ static ble_gap_sec_params_t             m_sec_params;                           
 static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
 static ble_nus_t                        m_nus;                                      /**< Structure to identify the Nordic UART Service. */
 static dm_application_instance_t        m_app_handle;                              /**< Application identifier allocated by device manager */
+static dm_handle_t                      m_bonded_peer_handle;                          /**< Device reference handle to the current bonded central. */
+static uint8_t                          m_direct_adv_cnt;                              /**< Counter of direct advertisements. */
 static bool                             m_memory_access_in_progress = false;        /**< Flag to keep track of ongoing operations on persistent memory. */
+static uint8_t                          m_advertising_mode;                            /**< Variable to keep track of when we are advertising. */
+static ble_gap_addr_t                   m_ble_addr;                                    /**< Variable for getting and setting of BLE device address. */
+
 //gpiote user identifier
 static app_gpiote_user_id_t gpiote_user_id;
 static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
@@ -140,6 +152,17 @@ typedef enum
 	CMD_SEND_DATA_COMPLETED,
 	CMD_SET_ALARM,
 }MESSAGE_CMD_ID_t;
+
+typedef enum
+{
+    BLE_NO_ADV,               /**< No advertising running. */
+    BLE_DIRECTED_ADV,         /**< Direct advertising to the latest central. */
+    BLE_FAST_ADV_WHITELIST,   /**< Advertising with whitelist. */
+    BLE_FAST_ADV,             /**< Fast advertising running. */
+    BLE_SLOW_ADV,             /**< Slow advertising running. */
+    BLE_SLEEP,                /**< Go to system-off. */
+} ble_advertising_mode_t;
+
 /**@brief     Error handler function, which is called when an error has occurred.
  *
  * @warning   This handler is an example only and does not fit a final product. You need to analyze
@@ -159,7 +182,7 @@ void app_error_handler(uint32_t error_code, uint32_t line_num, const uint8_t * p
     //                any communication.
     //                Use with care. Un-comment the line below to use.
     // ble_debug_assert_handler(error_code, line_num, p_file_name);
-	printf("%d %d %s\r\n", (int32_t)error_code,line_num,p_file_name);
+	printf("0x%x %d %s\r\n", error_code,line_num,p_file_name);
 
     // On assert, the system can only recover with a reset.
     NVIC_SystemReset();
@@ -204,10 +227,7 @@ static void sec_req_timeout_handler(void * p_context)
 {
     uint32_t             err_code;
     dm_security_status_t status;
-	
-//	err_code = sd_ble_gap_authenticate(m_conn_handle,&m_sec_params);
-//	APP_ERROR_CHECK(err_code);
-	
+
     if (m_conn_handle != BLE_CONN_HANDLE_INVALID)
     {
         err_code = dm_security_status_req(&m_dm_handle, &status);
@@ -278,14 +298,49 @@ static void gap_params_init(void)
 
     err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
     APP_ERROR_CHECK(err_code);
+#if defined(ADV_WHITELIST) || defined(ADV_BOND)
 	//初始化蓝牙匹配码功能
 	uint8_t passkey[] = PAIR_PASS_WORD;
 	static_options.gap.passkey.p_passkey = passkey;
 	err_code = sd_ble_opt_set(BLE_GAP_OPT_PASSKEY, &static_options);
 	APP_ERROR_CHECK(err_code);
+#endif
 }
+#if defined(ADV_WHITELIST) || defined(ADV_BOND)
+/**@brief Function for initializing the Advertising functionality.
+ *
+ * @details Encodes the required advertising data and passes it to the stack.
+ *          Also builds a structure to be passed to the stack when starting advertising.
+ *
+ * @param[in]  adv_flags  Indicates which type of advertisement to use, see @ref BLE_GAP_DISC_MODES.
+ */
+static void advertising_init(uint8_t adv_flags)
+{
+    uint32_t      err_code;
+    ble_advdata_t advdata;
 
+    ble_uuid_t adv_uuids[] = { { BLE_UUID_HUMAN_INTERFACE_DEVICE_SERVICE, BLE_UUID_TYPE_BLE } };
 
+    err_code = sd_ble_gap_address_get(&m_ble_addr);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = sd_ble_gap_address_set(BLE_GAP_ADDR_CYCLE_MODE_NONE, &m_ble_addr);
+    APP_ERROR_CHECK(err_code);
+
+    // Build and set advertising data
+    memset(&advdata, 0, sizeof(advdata));
+
+    advdata.name_type               = BLE_ADVDATA_FULL_NAME;
+    advdata.include_appearance      = true;
+    advdata.flags.size              = sizeof(adv_flags);
+    advdata.flags.p_data            = &adv_flags;
+    advdata.uuids_complete.uuid_cnt = sizeof(adv_uuids) / sizeof(adv_uuids[0]);
+    advdata.uuids_complete.p_uuids  = adv_uuids;
+
+    err_code = ble_advdata_set(&advdata, NULL);
+    APP_ERROR_CHECK(err_code);
+}
+#else
 /**@brief   Function for the Advertising functionality initialization.
  *
  * @details Encodes the required advertising data and passes it to the stack.
@@ -296,11 +351,13 @@ static void advertising_init(void)
     uint32_t      err_code;
     ble_advdata_t advdata;
     ble_advdata_t scanrsp;
-	//广播超时模式
-//    uint8_t       flags = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;
+#if defined(ADV_GENERAL)
 	//无限广播模式
 	uint8_t			flags = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
-
+#else
+	//广播超时模式
+    uint8_t       flags = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;
+#endif
     ble_uuid_t adv_uuids[] = {{BLE_UUID_NUS_SERVICE, m_nus.uuid_type}};
 
     memset(&advdata, 0, sizeof(advdata));
@@ -316,7 +373,7 @@ static void advertising_init(void)
     err_code = ble_advdata_set(&advdata, &scanrsp);
     APP_ERROR_CHECK(err_code);
 }
-
+#endif
 
 /**@brief    Function for handling the data from the Nordic UART Service.
  *
@@ -416,8 +473,207 @@ static void conn_params_init(void)
     err_code = ble_conn_params_init(&cp_init);
     APP_ERROR_CHECK(err_code);
 }
+#if defined (ADV_BOND)
+
+static void advertising_start(void)
+{
+    uint32_t             err_code;
+    ble_gap_adv_params_t adv_params;
+    ble_gap_whitelist_t  whitelist;
+    ble_gap_addr_t       peer_address;
+    uint32_t             count;
+
+	err_code = pstorage_access_status_get(&count);
+    APP_ERROR_CHECK(err_code);
+
+    if (count != 0)
+    {
+        m_memory_access_in_progress = true;
+        return;
+    }
+    // Initialize advertising parameters with defaults values
+    memset(&adv_params, 0, sizeof(adv_params));
+
+    adv_params.type        = BLE_GAP_ADV_TYPE_ADV_IND;
+    adv_params.p_peer_addr = NULL;
+    adv_params.fp          = BLE_GAP_ADV_FP_ANY;
+    adv_params.p_whitelist = NULL;
+
+    adv_params.interval = APP_ADV_INTERVAL_FAST;
+    adv_params.timeout  = APP_FAST_ADV_TIMEOUT;
 
 
+	switch (m_advertising_mode)
+	{
+		case BLE_NO_ADV:
+	        advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
+			ble_gap_addr_t       * p_whitelist_addr[BLE_GAP_WHITELIST_ADDR_MAX_COUNT];
+		    ble_gap_irk_t        * p_whitelist_irk[BLE_GAP_WHITELIST_IRK_MAX_COUNT];
+
+		    whitelist.addr_count = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
+		    whitelist.irk_count  = BLE_GAP_WHITELIST_IRK_MAX_COUNT;
+		    whitelist.pp_addrs   = p_whitelist_addr;
+		    whitelist.pp_irks    = p_whitelist_irk;
+
+		    err_code = dm_whitelist_create(&m_app_handle, &whitelist);
+		    APP_ERROR_CHECK(err_code);
+            m_advertising_mode = BLE_FAST_ADV_WHITELIST;
+			app_trace_log("%s ,%d, BLE_NO_ADV\r\n",__FUNCTION__,__LINE__);
+			break;
+            // Fall through.
+
+        case BLE_FAST_ADV_WHITELIST:
+        {
+            advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
+			ble_gap_addr_t       * p_whitelist_addr[BLE_GAP_WHITELIST_ADDR_MAX_COUNT];
+		    ble_gap_irk_t        * p_whitelist_irk[BLE_GAP_WHITELIST_IRK_MAX_COUNT];
+
+		    whitelist.addr_count = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
+		    whitelist.irk_count  = BLE_GAP_WHITELIST_IRK_MAX_COUNT;
+		    whitelist.pp_addrs   = p_whitelist_addr;
+		    whitelist.pp_irks    = p_whitelist_irk;
+
+		    err_code = dm_whitelist_create(&m_app_handle, &whitelist);
+		    APP_ERROR_CHECK(err_code);
+			if ((whitelist.addr_count != 0) || (whitelist.irk_count != 0))
+			{
+				adv_params.fp		   = BLE_GAP_ADV_FP_FILTER_CONNREQ;
+				adv_params.p_whitelist = &whitelist;
+                advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
+			}
+            m_advertising_mode = BLE_NO_ADV;
+			app_trace_log("%s ,%d, BLE_FAST_ADV_WHITELIST\r\n",__FUNCTION__,__LINE__);
+            break;
+        }
+		case BLE_FAST_ADV:
+	        advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
+	        m_advertising_mode  = BLE_FAST_ADV_WHITELIST;
+			app_trace_log("%s ,%d, BLE_FAST_ADV\r\n",__FUNCTION__,__LINE__);
+	        break;
+	}
+
+    // Start advertising.
+    err_code = sd_ble_gap_adv_start(&adv_params);
+    APP_ERROR_CHECK(err_code);
+}
+
+#elif defined (ADV_WHITELIST)
+static void advertising_start(void)
+{
+    uint32_t             err_code;
+    ble_gap_adv_params_t adv_params;
+    ble_gap_whitelist_t  whitelist;
+    ble_gap_addr_t       peer_address;
+    uint32_t             count;
+
+    // Verify if there is any flash access pending, if yes delay starting advertising until
+    // it's complete.
+    err_code = pstorage_access_status_get(&count);
+    APP_ERROR_CHECK(err_code);
+
+    if (count != 0)
+    {
+        m_memory_access_in_progress = true;
+        return;
+    }
+    // Initialize advertising parameters with defaults values
+    memset(&adv_params, 0, sizeof(adv_params));
+
+    adv_params.type        = BLE_GAP_ADV_TYPE_ADV_IND;
+    adv_params.p_peer_addr = NULL;
+    adv_params.fp          = BLE_GAP_ADV_FP_ANY;
+    adv_params.p_whitelist = NULL;
+
+    // Configure advertisement according to current advertising state.
+    if (m_advertising_mode == BLE_DIRECTED_ADV)
+    {
+        err_code = dm_peer_addr_get(&m_bonded_peer_handle, &peer_address);
+        if (err_code != NRF_SUCCESS)
+        {
+            m_advertising_mode = BLE_FAST_ADV_WHITELIST;
+        }
+    }
+    switch (m_advertising_mode)
+    {
+        case BLE_NO_ADV:
+            m_advertising_mode = BLE_FAST_ADV_WHITELIST;
+            // Fall through.
+
+        case BLE_FAST_ADV_WHITELIST:
+        {
+            ble_gap_addr_t       * p_whitelist_addr[BLE_GAP_WHITELIST_ADDR_MAX_COUNT];
+            ble_gap_irk_t        * p_whitelist_irk[BLE_GAP_WHITELIST_IRK_MAX_COUNT];
+
+            whitelist.addr_count = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
+            whitelist.irk_count  = BLE_GAP_WHITELIST_IRK_MAX_COUNT;
+            whitelist.pp_addrs   = p_whitelist_addr;
+            whitelist.pp_irks    = p_whitelist_irk;
+
+            err_code = dm_whitelist_create(&m_app_handle, &whitelist);
+            APP_ERROR_CHECK(err_code);
+
+            if ((whitelist.addr_count != 0) || (whitelist.irk_count != 0))
+            {
+                adv_params.fp          = BLE_GAP_ADV_FP_FILTER_CONNREQ;
+                adv_params.p_whitelist = &whitelist;
+
+                advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
+                m_advertising_mode = BLE_FAST_ADV;
+            }
+            else
+            {
+                m_advertising_mode = BLE_SLOW_ADV;
+            }
+
+            adv_params.interval = APP_ADV_INTERVAL_FAST;
+            adv_params.timeout  = APP_FAST_ADV_TIMEOUT;
+			app_trace_log("%s ,%d, BLE_FAST_ADV_WHITELIST\r\n",__FUNCTION__,__LINE__);
+            break;
+        }
+
+        case BLE_DIRECTED_ADV:
+            adv_params.p_peer_addr = &peer_address;
+            adv_params.type        = BLE_GAP_ADV_TYPE_ADV_DIRECT_IND;
+            adv_params.timeout     = 0;
+
+            m_direct_adv_cnt--;
+            if (m_direct_adv_cnt == 0)
+            {
+                m_advertising_mode = BLE_FAST_ADV_WHITELIST;
+            }
+			app_trace_log("%s ,%d, BLE_DIRECTED_ADV\r\n",__FUNCTION__,__LINE__);
+            break;
+
+        case BLE_FAST_ADV:
+            advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
+
+            adv_params.interval = APP_ADV_INTERVAL_FAST;
+            adv_params.timeout  = APP_FAST_ADV_TIMEOUT;
+            m_advertising_mode  = BLE_SLOW_ADV;
+			app_trace_log("%s ,%d, BLE_FAST_ADV\r\n",__FUNCTION__,__LINE__);
+            break;
+
+        case BLE_SLOW_ADV:
+            advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
+
+            adv_params.interval = APP_ADV_INTERVAL_SLOW;
+            adv_params.timeout  = APP_SLOW_ADV_TIMEOUT;
+            m_advertising_mode  = BLE_SLEEP;
+			app_trace_log("%s ,%d, BLE_SLOW_ADV\r\n",__FUNCTION__,__LINE__);
+            break;
+
+        default:
+            // No implementation needed.
+            break;
+    }
+
+    // Start advertising.
+    err_code = sd_ble_gap_adv_start(&adv_params);
+    APP_ERROR_CHECK(err_code);
+}
+
+
+#elif defined(ADV_GENERAL)
 /**@brief Function for starting advertising.
  */
 static void advertising_start(void)
@@ -432,11 +688,16 @@ static void advertising_start(void)
     adv_params.p_peer_addr = NULL;
     adv_params.fp          = BLE_GAP_ADV_FP_ANY;
     adv_params.interval    = APP_ADV_INTERVAL;
+#if defined(ADV_GENERAL)
     adv_params.timeout     = 0;//广播超时 三分钟APP_ADV_TIMEOUT_IN_SECONDS
+#else
+    adv_params.timeout     = APP_ADV_TIMEOUT_IN_SECONDS;
+#endif
 
     err_code = sd_ble_gap_adv_start(&adv_params);
     APP_ERROR_CHECK(err_code);
 }
+#endif
 /**@brief Function for handling the Device Manager events.
  *
  * @param[in]   p_evt   Data associated to the device manager event.
@@ -448,9 +709,16 @@ static uint32_t device_manager_evt_handler(dm_handle_t const    * p_handle,
     uint32_t err_code = NRF_SUCCESS;
 
     m_dm_handle = *p_handle;
-    APP_ERROR_CHECK(event_result);
+//    APP_ERROR_CHECK(event_result);
     switch (p_event->event_id)
     {
+#if defined (ADV_WHITELIST)
+		case DM_EVT_DEVICE_CONTEXT_LOADED: // Fall through.
+        case DM_EVT_SECURITY_SETUP_COMPLETE:
+			if (event_result == NRF_SUCCESS)
+            	m_bonded_peer_handle = (*p_handle);
+            break;
+#else
         case DM_EVT_CONNECTION:
             // Start Security Request timer.
             if (m_dm_handle.device_id != DM_INVALID_ID)
@@ -463,6 +731,7 @@ static uint32_t device_manager_evt_handler(dm_handle_t const    * p_handle,
             	APP_ERROR_CHECK(err_code);
             }
             break;
+#endif
         default:
             break;
     }
@@ -484,19 +753,42 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
 			adv_status = false;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
-			err_code = app_timer_start(m_sec_req_timer_id, SECURITY_REQUEST_DELAY, NULL);
-            APP_ERROR_CHECK(err_code);
+#if defined (ADV_WHITELIST)
+			m_advertising_mode = BLE_NO_ADV;
+#endif
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
             nrf_gpio_pin_clear(CONNECTED_LED_PIN_NO);
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
+#if defined (ADV_WHITELIST)
+			m_advertising_mode = BLE_DIRECTED_ADV;
+            m_direct_adv_cnt   = APP_DIRECTED_ADV_TIMEOUT;
+#endif
+#if defined (DEBUG_MODE)
 			advertising_start();
+#endif
             break;
         case BLE_GAP_EVT_TIMEOUT:
+#if defined (ADV_BOND)
+			advertising_start();
+#elif defined (ADV_WHITELIST)
+			if (p_ble_evt->evt.gap_evt.params.timeout.src == BLE_GAP_TIMEOUT_SRC_ADVERTISEMENT)
+			{
+				if (m_advertising_mode == BLE_SLEEP)
+				{
+					m_advertising_mode = BLE_NO_ADV;
+					advertising_start();
+				}
+				else
+				{
+					advertising_start();
+//					printf("%d,%s\r\n",__LINE__,__FUNCTION__);
+				}
+			}
+#elif defined (ADV_GENERAL)
             if (p_ble_evt->evt.gap_evt.params.timeout.src == BLE_GAP_TIMEOUT_SRC_ADVERTISEMENT)
             {
-                nrf_gpio_pin_clear(ADVERTISING_LED_PIN_NO);
 
                 // Configure buttons with sense level low as wakeup source.
                 nrf_gpio_cfg_sense_input(WAKEUP_BUTTON_PIN,
@@ -507,53 +799,65 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
                 err_code = sd_power_system_off();
                 APP_ERROR_CHECK(err_code);
             }
-            break;
-#if 0
-			case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
-            err_code = sd_ble_gap_sec_params_reply(m_conn_handle,
-                                                   BLE_GAP_SEC_STATUS_SUCCESS,
-                                                   &m_sec_params);
-            APP_ERROR_CHECK(err_code);
-            break;
-
-        case BLE_GATTS_EVT_SYS_ATTR_MISSING:
-            err_code = sd_ble_gatts_sys_attr_set(m_conn_handle, NULL, 0);
-            APP_ERROR_CHECK(err_code);
-            break;
-		case BLE_GAP_EVT_SEC_INFO_REQUEST:
-            p_enc_info = &m_auth_status.periph_keys.enc_info;
-            if (p_enc_info->div == p_ble_evt->evt.gap_evt.params.sec_info_request.div)
-            {
-                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, p_enc_info, NULL);
-                APP_ERROR_CHECK(err_code);
-            }
-            else
-            {
-                // No keys found for this device
-                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, NULL, NULL);
-                APP_ERROR_CHECK(err_code);
-            }
-            break;
 #endif
-		case BLE_GAP_EVT_PASSKEY_DISPLAY:
-			// Don't send delayed Security Request if security procedure is already in progress.
-			err_code = app_timer_stop(m_sec_req_timer_id);
-			APP_ERROR_CHECK(err_code);
-			break;
-		case BLE_GAP_EVT_AUTH_STATUS:
-			m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
-			if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
-			{
-				err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+            break;
+#if defined (ADV_WHITELIST)|| defined(ADV_BOND)
+			case BLE_GAP_EVT_PASSKEY_DISPLAY:
+				// Don't send delayed Security Request if security procedure is already in progress.
+				app_trace_log("%s, %d, passkey:%c%c%c%c%c%c\r\n",__FUNCTION__,__LINE__,p_ble_evt->evt.gap_evt.params.passkey_display.passkey[0],\
+				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[1],\
+				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[2],\
+				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[3],\
+				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[4],\
+				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[5]);
+				break;
+			case BLE_GAP_EVT_AUTH_STATUS:
+				m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
+				if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
+				{
+					err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+					APP_ERROR_CHECK(err_code);
+				}
+				break;
+#elif defined (ADV_GERANL)
+			case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
+				err_code = sd_ble_gap_sec_params_reply(m_conn_handle,
+													   BLE_GAP_SEC_STATUS_SUCCESS,
+													   &m_sec_params);
 				APP_ERROR_CHECK(err_code);
-			}
-            break;
-        case BLE_GAP_EVT_CONN_SEC_UPDATE:
+				break;
 
-            break;
-        default:
-            // No implementation needed.
-            break;
+			case BLE_GATTS_EVT_SYS_ATTR_MISSING:
+				err_code = sd_ble_gatts_sys_attr_set(m_conn_handle, NULL, 0);
+				APP_ERROR_CHECK(err_code);
+				break;
+
+			case BLE_GAP_EVT_AUTH_STATUS:
+				m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
+				break;
+			case BLE_GAP_EVT_SEC_INFO_REQUEST:
+				p_enc_info = &m_auth_status.periph_keys.enc_info;
+				if (p_enc_info->div == p_ble_evt->evt.gap_evt.params.sec_info_request.div)
+				{
+					err_code = sd_ble_gap_sec_info_reply(m_conn_handle, p_enc_info, NULL);
+					APP_ERROR_CHECK(err_code);
+				}
+				else
+				{
+					// No keys found for this device
+					err_code = sd_ble_gap_sec_info_reply(m_conn_handle, NULL, NULL);
+					APP_ERROR_CHECK(err_code);
+				}
+				break;
+
+#endif
+
+			case BLE_GAP_EVT_CONN_SEC_UPDATE:
+
+				break;
+			default:
+				// No implementation needed.
+				break;
     }
 }
 
@@ -589,7 +893,9 @@ static void on_sys_evt(uint32_t sys_evt)
  */
 static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 {
+#if defined(ADV_WHITELIST)||defined (ADV_BOND)
 	dm_ble_evt_handler(p_ble_evt);
+#endif
     ble_conn_params_on_ble_evt(p_ble_evt);
     ble_nus_on_ble_evt(&m_nus, p_ble_evt);
     on_ble_evt(p_ble_evt);
@@ -649,7 +955,7 @@ static void device_manager_init(void)
     dm_application_param_t  register_param;
 
     // Clear all bonded centrals if the Bonds Delete button is pushed.
-    init_data.clear_persistent_data = true;
+    init_data.clear_persistent_data = false;
 
     err_code = dm_init(&init_data);
     APP_ERROR_CHECK(err_code);
@@ -678,9 +984,6 @@ static void buttons_init(void)
 	uint32_t high_to_low_bitmask = (uint32_t)(1 << BUTTON_1);
 	uint32_t err_code;
 
-//    nrf_gpio_cfg_sense_input(WAKEUP_BUTTON_PIN,
-//                             BUTTON_PULL,
-//                             NRF_GPIO_PIN_SENSE_LOW);
 	nrf_gpio_cfg_sense_input(BUTTON_1,
 						 BUTTON_PULL,
 						 NRF_GPIO_PIN_SENSE_LOW);
@@ -1151,14 +1454,20 @@ int main(void)
 	device_manager_init();
     gap_params_init();
     services_init();
-    advertising_init();
+#if defined (ADV_WHITELIST)||defined(ADV_BOND)
+    advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
+#else
+	advertising_init();
+#endif
     conn_params_init();
     sec_params_init();
     printf(START_STRING);
 	SPI_Init();
 	//gpiote初始化
     buttons_init();
-    advertising_start();
+#if defined (DEBUG_MODE)
+	advertising_start();
+#endif
 
 //	LIS3DH_GetWHO_AM_I(&data);
 //	simple_uart_put(data);

@@ -36,6 +36,14 @@ typedef struct {
 }queue_t;
 
 typedef struct {
+	uint16_t angle; //干涉角度
+	uint16_t timer; //干涉时间
+	uint8_t mac_add[6]; //设备的MAC地址
+	uint16_t device_bonded; //设备绑定标志
+	uint16_t Reserved[2];
+}system_params_t;
+
+typedef struct {
 	uint8_t year;
 	uint8_t mon;
 	uint8_t day;
@@ -56,6 +64,7 @@ typedef enum {
 }queue_status_t;
 
 extern queue_t queue_entries;
+extern system_params_t system_params;
 
 void queue_init(void);
 uint8_t queue_pop(queue_items_t *item);
