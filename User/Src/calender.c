@@ -125,6 +125,7 @@ void ConvertUTCTime( UTCTimeStruct *tm, UTCTime secTime )
     }
     tm->month++;
     tm->day = numDays;
+	tm->day++;
   }
 }
 

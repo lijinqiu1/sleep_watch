@@ -96,20 +96,24 @@
 
 #define LIS3DH_SMAPLE_RATE				1											/**< 三轴加速度采样频率 单位:秒 >**/
 
-#define ANGLE_SMAPLE_RATE				300											/**< 角度数据采样频率 单位:秒 >**/
+#define ANGLE_SMAPLE_RATE				60											/**< 角度数据采样频率 单位:秒 >**/
 //gpiote
 #define MAX_USERS						1
 //蓝牙拦截配对密码
 #define PAIR_PASS_WORD                  "123456"
 
+#if defined (ADV_GERANL)
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
+#endif
 static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
 static ble_nus_t                        m_nus;                                      /**< Structure to identify the Nordic UART Service. */
 static dm_application_instance_t        m_app_handle;                              /**< Application identifier allocated by device manager */
+#if defined (ADV_WHITELIST)
 static dm_handle_t                      m_bonded_peer_handle;                          /**< Device reference handle to the current bonded central. */
 static uint8_t                          m_direct_adv_cnt;                              /**< Counter of direct advertisements. */
-static bool                             m_memory_access_in_progress = false;        /**< Flag to keep track of ongoing operations on persistent memory. */
 static uint8_t                          m_advertising_mode;                            /**< Variable to keep track of when we are advertising. */
+#endif
+static bool                             m_memory_access_in_progress = false;        /**< Flag to keep track of ongoing operations on persistent memory. */
 static ble_gap_addr_t                   m_ble_addr;                                    /**< Variable for getting and setting of BLE device address. */
 
 //gpiote user identifier
@@ -127,23 +131,22 @@ static  app_timer_id_t m_sec_req_timer_id;
 #define EVENT_MESSAGE_RECEIVED          (uint32_t)(0x00000001 << 1)					 /**< 通信事件 >**/
 #define EVENT_DATA_SENDING				(uint32_t)(0x00000001 << 2)					 /**< 数据发送事件 >**/
 #define EVENT_DATA_SENDED               (uint32_t)(0x00000001 << 3)					 /**< 数据发送完成事件 >**/
-
+#define EVENT_QUEUE_PUSH				(uint32_t)(0x00000001 << 4)                  /**< 角度存储 >**/
 static void period_cycle_process(void * p_context);
 
-static uint32_t event_status = 0;      //时间存储变量
+static uint32_t event_status = 0;      //事件存储变量
 static bool key_pressed = false;         //记录按键事件
 static bool adv_status = false;          //广播状态
 static bool work_status = false;         //设备工作状态
 static bool message_received = false;  //信息接收
 static bool data_send_status = false;  //发送数据
-static bool ble_connect_status = false;  //蓝牙连接状态
-static uint8_t tilt_init_flag = false; //角度值初始化
+static bool ble_connect_status = false;//蓝牙连接状态
+static bool tilt_init_flag = false;    //角度值初始化
+static bool alarm_status = false;      //报警状态
+static bool tilt_push = false;           //数据存储
 static float Tilt;                       //当前倾角变化值
 static uint8_t rec_data_buffer[20];      //缓存接收到的数据
 
-//干涉条件
-static uint8_t alarm_angle;//干涉角度
-static uint8_t alarm_timer;//干涉时间
 typedef enum
 {
 	CMD_SET_TIME = 0x01,
@@ -151,6 +154,8 @@ typedef enum
 	CMD_SEND_DATA,
 	CMD_SEND_DATA_COMPLETED,
 	CMD_SET_ALARM,
+	CMD_DEVICE_BOND,
+	CMD_GET_BATTERY,
 }MESSAGE_CMD_ID_t;
 
 typedef enum
@@ -383,8 +388,12 @@ static void advertising_init(void)
 /**@snippet [Handling the data received over BLE] */
 void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t length)
 {
-	memcpy(rec_data_buffer,p_data,length);
-	message_received = true;
+	app_trace_log("%s,%d,length:%d\r\n",__FUNCTION__,__LINE__,length);
+	if ((p_data[0] == 0xA5) && (p_data[length - 1] == 0x80))
+	{
+		memcpy(rec_data_buffer,p_data,length);
+		message_received = true;
+	}
 }
 /**@snippet [Handling the data received over BLE] */
 
@@ -409,6 +418,7 @@ static void services_init(void)
  */
 static void sec_params_init(void)
 {
+#if defined (ADV_GERANL)
     m_sec_params.timeout      = SEC_PARAM_TIMEOUT;
     m_sec_params.bond         = SEC_PARAM_BOND;
     m_sec_params.mitm         = SEC_PARAM_MITM;
@@ -416,6 +426,7 @@ static void sec_params_init(void)
     m_sec_params.oob          = SEC_PARAM_OOB;
     m_sec_params.min_key_size = SEC_PARAM_MIN_KEY_SIZE;
     m_sec_params.max_key_size = SEC_PARAM_MAX_KEY_SIZE;
+#endif
 }
 
 
@@ -480,7 +491,6 @@ static void advertising_start(void)
     uint32_t             err_code;
     ble_gap_adv_params_t adv_params;
     ble_gap_whitelist_t  whitelist;
-    ble_gap_addr_t       peer_address;
     uint32_t             count;
 
 	err_code = pstorage_access_status_get(&count);
@@ -502,59 +512,43 @@ static void advertising_start(void)
     adv_params.interval = APP_ADV_INTERVAL_FAST;
     adv_params.timeout  = APP_FAST_ADV_TIMEOUT;
 
+	ble_gap_addr_t		 * p_whitelist_addr[BLE_GAP_WHITELIST_ADDR_MAX_COUNT];
+	ble_gap_irk_t		 * p_whitelist_irk[BLE_GAP_WHITELIST_IRK_MAX_COUNT];
 
-	switch (m_advertising_mode)
+	whitelist.addr_count = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
+	whitelist.irk_count  = BLE_GAP_WHITELIST_IRK_MAX_COUNT;
+	whitelist.pp_addrs	 = p_whitelist_addr;
+	whitelist.pp_irks	 = p_whitelist_irk;
+
+	err_code = dm_whitelist_create(&m_app_handle, &whitelist);
+	APP_ERROR_CHECK(err_code);
+
+	if ((whitelist.addr_count != 0) || (whitelist.irk_count != 0))
 	{
-		case BLE_NO_ADV:
-	        advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
-			ble_gap_addr_t       * p_whitelist_addr[BLE_GAP_WHITELIST_ADDR_MAX_COUNT];
-		    ble_gap_irk_t        * p_whitelist_irk[BLE_GAP_WHITELIST_IRK_MAX_COUNT];
-
-		    whitelist.addr_count = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
-		    whitelist.irk_count  = BLE_GAP_WHITELIST_IRK_MAX_COUNT;
-		    whitelist.pp_addrs   = p_whitelist_addr;
-		    whitelist.pp_irks    = p_whitelist_irk;
-
-		    err_code = dm_whitelist_create(&m_app_handle, &whitelist);
-		    APP_ERROR_CHECK(err_code);
-            m_advertising_mode = BLE_FAST_ADV_WHITELIST;
-			app_trace_log("%s ,%d, BLE_NO_ADV\r\n",__FUNCTION__,__LINE__);
-			break;
-            // Fall through.
-
-        case BLE_FAST_ADV_WHITELIST:
-        {
-            advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
-			ble_gap_addr_t       * p_whitelist_addr[BLE_GAP_WHITELIST_ADDR_MAX_COUNT];
-		    ble_gap_irk_t        * p_whitelist_irk[BLE_GAP_WHITELIST_IRK_MAX_COUNT];
-
-		    whitelist.addr_count = BLE_GAP_WHITELIST_ADDR_MAX_COUNT;
-		    whitelist.irk_count  = BLE_GAP_WHITELIST_IRK_MAX_COUNT;
-		    whitelist.pp_addrs   = p_whitelist_addr;
-		    whitelist.pp_irks    = p_whitelist_irk;
-
-		    err_code = dm_whitelist_create(&m_app_handle, &whitelist);
-		    APP_ERROR_CHECK(err_code);
-			if ((whitelist.addr_count != 0) || (whitelist.irk_count != 0))
-			{
-				adv_params.fp		   = BLE_GAP_ADV_FP_FILTER_CONNREQ;
-				adv_params.p_whitelist = &whitelist;
-                advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
-			}
-            m_advertising_mode = BLE_NO_ADV;
-			app_trace_log("%s ,%d, BLE_FAST_ADV_WHITELIST\r\n",__FUNCTION__,__LINE__);
-            break;
-        }
-		case BLE_FAST_ADV:
-	        advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
-	        m_advertising_mode  = BLE_FAST_ADV_WHITELIST;
-			app_trace_log("%s ,%d, BLE_FAST_ADV\r\n",__FUNCTION__,__LINE__);
-	        break;
+		if (system_params.device_bonded == 0xFFFF)
+		{
+			err_code = dm_device_delete_all(&m_app_handle);
+			APP_ERROR_CHECK(err_code);
+            advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
+		}
+		else
+		{
+			adv_params.fp		   = BLE_GAP_ADV_FP_FILTER_CONNREQ;
+			adv_params.p_whitelist = &whitelist;
+			advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
+		}
 	}
+
+	adv_params.interval = APP_ADV_INTERVAL_FAST;
+	adv_params.timeout	= APP_FAST_ADV_TIMEOUT;
 
     // Start advertising.
     err_code = sd_ble_gap_adv_start(&adv_params);
-    APP_ERROR_CHECK(err_code);
+//	while (err_code != NRF_SUCCESS)
+//	{
+//		err_code = sd_ble_gap_adv_start(&adv_params);
+//	}
+//    APP_ERROR_CHECK(err_code);
 }
 
 #elif defined (ADV_WHITELIST)
@@ -745,13 +739,16 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
 {
     uint32_t                         err_code;
     static ble_gap_evt_auth_status_t m_auth_status;
+#if defined (ADV_GERANL)
     ble_gap_enc_info_t *             p_enc_info;
+#endif
 
     switch (p_ble_evt->header.evt_id)
     {
         case BLE_GAP_EVT_CONNECTED:
             nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
 			adv_status = false;
+			ble_connect_status = true;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 #if defined (ADV_WHITELIST)
 			m_advertising_mode = BLE_NO_ADV;
@@ -761,6 +758,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
         case BLE_GAP_EVT_DISCONNECTED:
             nrf_gpio_pin_clear(CONNECTED_LED_PIN_NO);
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
+			ble_connect_status = false;
 #if defined (ADV_WHITELIST)
 			m_advertising_mode = BLE_DIRECTED_ADV;
             m_direct_adv_cnt   = APP_DIRECTED_ADV_TIMEOUT;
@@ -1148,8 +1146,6 @@ static void period_cycle_process(void * p_context)
 	static uint16_t angle_timer = 0;	//角度采样频率
 	static uint16_t data_send_completed = 0; //用于传输数据结束后关闭蓝牙连接
 	static uint16_t alarm_timer_cont = 0; //当角度大于干涉角度时开始计时，超时后报警
-	queue_items_t item;
-	UTCTimeStruct time;
 	uint32_t err_code;
 	//模拟日历
 	TimeSeconds ++;
@@ -1218,24 +1214,16 @@ static void period_cycle_process(void * p_context)
 	}
 	if ((work_status == true)&&(angle_timer++ >= ANGLE_SMAPLE_RATE))
 	{
-		if((Tilt > alarm_angle)&&(alarm_timer_cont++ > alarm_timer))
+		if((Tilt > system_params.angle)&&(alarm_timer_cont++ > system_params.time))
 		{//开始报警
-
+			alarm_status = true;
 		}
-		else
-		{//取消报警
-
-		}
-		//存储角度值
-		ConvertUTCTime(&time,TimeSeconds);
-		item.year = time.year - 2000;
-		item.mon = time.month;
-		item.day = time.day;
-		item.hour = time.hour;
-		item.min = time.minutes;
-		item.second = time.seconds;
-		item.angle = (uint16_t)(Tilt*100);
-//		queue_push(&item);
+		tilt_push = true;
+		angle_timer = 0;
+	}
+	if (Tilt<system_params.angle)
+	{
+		alarm_status = false;
 	}
 }
 
@@ -1376,14 +1364,63 @@ static void message_process(uint8_t *ch)
 		break;
 	case CMD_SET_ALARM:
 		//设置干涉条件
-		alarm_angle = ch[3];
-		alarm_timer = ch[4];
+		system_params.angle = ch[3];
+		system_params.time = ch[4];
 		//发送响应报文
 		data_array[0] = 0xA5;
 		data_array[1] = 0x01;
 		data_array[2] = CMD_SET_ALARM;
 		data_array[3] = 0x80;
 		err_code = ble_nus_send_string(&m_nus, data_array, 4);
+        if (err_code != NRF_ERROR_INVALID_STATE)
+        {
+            APP_ERROR_CHECK(err_code);
+        }
+		system_params_save(&system_params);
+		break;
+	case CMD_DEVICE_BOND:
+		if(ch[3] == 0x01)
+		{
+			//设备绑定
+			system_params.device_bonded = 0x0001;
+			memcpy((char *)system_params.mac_add,&ch[4],6);
+			system_params_save(&system_params);
+			//发送响应报文
+			data_array[0] = 0xA5;
+			data_array[1] = 0x01;
+			data_array[2] = CMD_DEVICE_BOND;
+			data_array[3] = 0x80;
+			err_code = ble_nus_send_string(&m_nus, data_array, 4);
+	        if (err_code != NRF_ERROR_INVALID_STATE)
+	        {
+	            APP_ERROR_CHECK(err_code);
+	        }
+		}
+		else if (ch[3] == 0x02)
+		{
+			//设备解绑
+			system_params.device_bonded = 0xFFFF;
+			memset((char *)system_params.mac_add,0xFF,6);
+			system_params_save(&system_params);
+			//发送响应报文
+			data_array[0] = 0xA5;
+			data_array[1] = 0x01;
+			data_array[2] = CMD_DEVICE_BOND;
+			data_array[3] = 0x80;
+			err_code = ble_nus_send_string(&m_nus, data_array, 4);
+	        if (err_code != NRF_ERROR_INVALID_STATE)
+	        {
+	            APP_ERROR_CHECK(err_code);
+	        }
+		}
+		break;
+	case CMD_GET_BATTERY:
+		data_array[0] = 0xA5;
+		data_array[1] = 0x02;
+		data_array[2] = CMD_GET_BATTERY;
+		data_array[3] = 100;
+		data_array[4] = 0x80;
+		err_code = ble_nus_send_string(&m_nus, data_array, 5);
         if (err_code != NRF_ERROR_INVALID_STATE)
         {
             APP_ERROR_CHECK(err_code);
@@ -1442,6 +1479,7 @@ int main(void)
 	AxesRaw_t Axes_Raw_Data = {0};
 	uint8_t response;
 	float ax,ay,az;
+	UTCTimeStruct time;
 	queue_items_t item;
 	uint8_t data_array[20];
 	uint32_t err_code;
@@ -1478,68 +1516,94 @@ int main(void)
     // Enter main loop
     for (;;)
     {
-//		if (lis3dh_flag == 1) {
-//			lis3dh_flag = 0;
-//			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
-//			if (response == 1) {
-//				ax = Axes_Raw_Data.AXIS_X/16384.0;
-//				ay = Axes_Raw_Data.AXIS_Y/16384.0;
-//				az = Axes_Raw_Data.AXIS_Z/16384.0;
-//				app_trace_log("X=%6f Y=%6f Z=%6f \r\n",
-//					ax,ay,az);
-//				Tilt = calculateTilt_run(ax,ay,az);
-//				app_trace_log("Tilt = %6f \r\n", Tilt);
-//			}
-//		}
-//		if (message_received == true)
-//		{//有数据接收
-//			message_received = false;
-//			message_process(rec_data_buffer);
-//		}
-
-//		if (data_send_status == true)
-//		{//开始发送数据
-//			if (queue_pop(&item))
-//			{
-//				//发送完成
-//				data_send_status = false;
-//				//led常亮
-//				nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
-//				event_status |= EVENT_DATA_SENDED;
-//				//发送传输完成报文
-//				data_array[0] = 0xA5;
-//				data_array[1] = 0x01;
-//				data_array[2] = CMD_SEND_DATA_COMPLETED;
-//				data_array[3] = 0x80;
-//				err_code = ble_nus_send_string(&m_nus, data_array, 4);
-//		        if (err_code != NRF_ERROR_INVALID_STATE)
-//		        {
-//		            APP_ERROR_CHECK(err_code);
-//		        }
-//			}
-//			else
-//			{
-//				//传输数据是led闪烁
-//				nrf_gpio_pin_toggle(CONNECTED_LED_PIN_NO);
-//				data_array[0] = 0xA5;
-//				data_array[1] = 0x09;
-//				data_array[2] = CMD_SEND_DATA;
-//				data_array[3] = item.year;
-//				data_array[4] = item.mon;
-//				data_array[5] = item.day;
-//				data_array[6] = item.hour;
-//				data_array[7] = item.min;
-//				data_array[8] = item.second;
-//				data_array[9] = (uint8_t)(item.angle & 0x00ff);
-//				data_array[10] = (uint8_t)((item.angle >> 8) & 0x00ff);
-//				data_array[11] = 0x80;
-//				err_code = ble_nus_send_string(&m_nus, data_array, 4);
-//		        while (err_code != NRF_ERROR_INVALID_STATE)
-//		        {
-//		            err_code = ble_nus_send_string(&m_nus, data_array, 4);
-//		        }
-//			}
-//		}
+		if (lis3dh_flag == 1)
+		{
+			lis3dh_flag = 0;
+			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
+			if (response == 1) {
+				ConvertUTCTime(&time,TimeSeconds);
+				ax = Axes_Raw_Data.AXIS_X/16384.0;
+				ay = Axes_Raw_Data.AXIS_Y/16384.0;
+				az = Axes_Raw_Data.AXIS_Z/16384.0;
+				app_trace_log("X=%6f Y=%6f Z=%6f \r\n",
+					ax,ay,az);
+				Tilt = calculateTilt_run(ax,ay,az);
+				app_trace_log("Tilt = %6f \r\n", Tilt);
+				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
+					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
+			}
+			//存储角度值
+			if (tilt_push == true)
+			{
+				ConvertUTCTime(&time,TimeSeconds);
+				item.year = time.year - 2000;
+				item.mon = time.month;
+				item.day = time.day;
+				item.hour = time.hour;
+				item.min = time.minutes;
+				item.second = time.seconds;
+				item.angle = (uint16_t)(Tilt*100);
+				queue_push(&item);
+				tilt_push = false;
+				app_trace_log("data push y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
+					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
+			}
+		}
+		if (message_received == true)
+		{//有数据接收
+			message_received = false;
+			message_process(rec_data_buffer);
+		}
+		if (data_send_status == true)
+		{//开始发送数据
+			if (ble_connect_status == true)
+			{
+				if (queue_pop(&item))
+				{
+					//发送完成
+					data_send_status = false;
+					//led常亮
+					nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
+					event_status |= EVENT_DATA_SENDED;
+					//发送传输完成报文
+					data_array[0] = 0xA5;
+					data_array[1] = 0x01;
+					data_array[2] = CMD_SEND_DATA_COMPLETED;
+					data_array[3] = 0x80;
+					err_code = ble_nus_send_string(&m_nus, data_array, 4);
+			        if (err_code != NRF_ERROR_INVALID_STATE)
+			        {
+			            APP_ERROR_CHECK(err_code);
+			        }
+				}
+				else
+				{
+					//传输数据是led闪烁
+					nrf_gpio_pin_toggle(CONNECTED_LED_PIN_NO);
+					data_array[0] = 0xA5;
+					data_array[1] = 0x09;
+					data_array[2] = CMD_SEND_DATA;
+					data_array[3] = item.year;
+					data_array[4] = item.mon;
+					data_array[5] = item.day;
+					data_array[6] = item.hour;
+					data_array[7] = item.min;
+					data_array[8] = item.second;
+					data_array[9] = (uint8_t)(item.angle & 0x00ff);
+					data_array[10] = (uint8_t)((item.angle >> 8) & 0x00ff);
+					data_array[11] = 0x80;
+					err_code = ble_nus_send_string(&m_nus, data_array, 12);
+			        while (err_code != NRF_SUCCESS)
+			        {
+			            err_code = ble_nus_send_string(&m_nus, data_array, 12);
+			        }
+				}
+			}
+			else
+			{
+				data_send_status = false;
+			}
+		}
         power_manage();
     }
 }
