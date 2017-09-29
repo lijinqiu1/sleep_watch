@@ -72,8 +72,8 @@
 #define APP_TIMER_MAX_TIMERS            3                                           /**< Maximum number of simultaneously created timers. */
 #define APP_TIMER_OP_QUEUE_SIZE         4                                           /**< Size of timer operation queues. */
 
-#define MIN_CONN_INTERVAL               MSEC_TO_UNITS(7.5, UNIT_1_25_MS)            /**< Minimum acceptable connection interval (20 ms), Connection interval uses 1.25 ms units. */
-#define MAX_CONN_INTERVAL               MSEC_TO_UNITS(30, UNIT_1_25_MS)             /**< Maximum acceptable connection interval (75 ms), Connection interval uses 1.25 ms units. */
+#define MIN_CONN_INTERVAL               MSEC_TO_UNITS(20, UNIT_1_25_MS)            /**< Minimum acceptable connection interval (20 ms), Connection interval uses 1.25 ms units. */
+#define MAX_CONN_INTERVAL               MSEC_TO_UNITS(75, UNIT_1_25_MS)             /**< Maximum acceptable connection interval (75 ms), Connection interval uses 1.25 ms units. */
 #define SLAVE_LATENCY                   0                                           /**< slave latency. */
 #define CONN_SUP_TIMEOUT                MSEC_TO_UNITS(300, UNIT_10_MS)              /**< Connection supervisory timeout (4 seconds), Supervision Timeout uses 10 ms units. */
 #define FIRST_CONN_PARAMS_UPDATE_DELAY  APP_TIMER_TICKS(5000, APP_TIMER_PRESCALER)  /**< Time from initiating event (connect or start of notification) to first time sd_ble_gap_conn_param_update is called (5 seconds). */
@@ -144,8 +144,10 @@ static bool ble_connect_status = false;//蓝牙连接状态
 static bool tilt_init_flag = false;    //角度值初始化
 static bool alarm_status = false;      //报警状态
 static bool tilt_push = false;           //数据存储
+static bool battery_status = false;    //测量电池电压
 static float Tilt;                       //当前倾角变化值
 static uint8_t rec_data_buffer[20];      //缓存接收到的数据
+static uint16_t battery_value;           //电池电量
 
 typedef enum
 {
@@ -447,6 +449,7 @@ static void on_conn_params_evt(ble_conn_params_evt_t * p_evt)
 
     if(p_evt->evt_type == BLE_CONN_PARAMS_EVT_FAILED)
     {
+		app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
         err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
         APP_ERROR_CHECK(err_code);
     }
@@ -813,6 +816,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
 				m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
 				if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
 				{
+					app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
 					err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
 					APP_ERROR_CHECK(err_code);
 				}
@@ -1135,7 +1139,35 @@ static void LIS3DH_Init(void)
 	//使能3轴
 	LIS3DH_SetAxis(LIS3DH_X_ENABLE | LIS3DH_Y_ENABLE | LIS3DH_Z_ENABLE);
 }
-//****************周期事件处理函数*********************
+/****************ADC**********************************/
+static void adc_init(void)
+{
+	NRF_ADC->CONFIG = (2 << 0) //ADC转换精度10位
+	                | (2 << 2) //ADC测量值为输入的1/3
+	                | (0 << 5) //选择内部1.2V为参考电压
+	                | (4 << 8);//选择AIN2(P0.1)为ADC的输入
+
+	//使能adc end事件中断
+//	NRF_ADC->INTENSET = 0x01;
+
+	NRF_ADC->ENABLE = 0x01;
+}
+
+static uint16_t adc_start(void)
+{
+	float value = 0;
+
+	//开始转换
+	NRF_ADC->TASKS_START = 0x01;
+
+	while(NRF_ADC->BUSY & 1);
+	value = NRF_ADC->RESULT * 1.0;
+	value = value*1.2/1024;
+	value *= 3;
+	app_trace_log("ADC: %f\r\n",value);
+	return (uint16_t)(value * 1000);
+}
+/****************周期事件处理函数*********************/
 static bool lis3dh_flag = 0;
 //周期事件处理函数
 static void period_cycle_process(void * p_context)
@@ -1146,6 +1178,7 @@ static void period_cycle_process(void * p_context)
 	static uint16_t angle_timer = 0;	//角度采样频率
 	static uint16_t data_send_completed = 0; //用于传输数据结束后关闭蓝牙连接
 	static uint16_t alarm_timer_cont = 0; //当角度大于干涉角度时开始计时，超时后报警
+	static uint16_t battery_timer = 0; //电池电量
 	uint32_t err_code;
 	//模拟日历
 	TimeSeconds ++;
@@ -1204,17 +1237,18 @@ static void period_cycle_process(void * p_context)
 		lis3dh_flag = 1;
 	}
 
-	if ((event_status&EVENT_DATA_SENDED) && (data_send_completed++ > 30))
+	if ((event_status&EVENT_DATA_SENDED) && (data_send_completed++ >= 30))
 	{
 		//数据传输完成后30s断开蓝牙连接
 		event_status&= ~EVENT_DATA_SENDED;
 		data_send_completed = 0;
+		app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
 		err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
         APP_ERROR_CHECK(err_code);
 	}
-	if ((work_status == true)&&(angle_timer++ >= ANGLE_SMAPLE_RATE))
+	if ((work_status == true)&&(angle_timer++ >= (ANGLE_SMAPLE_RATE-1)))
 	{
-		if((Tilt > system_params.angle)&&(alarm_timer_cont++ > system_params.time))
+		if((Tilt > system_params.angle)&&(alarm_timer_cont++ >= (system_params.time/ANGLE_SMAPLE_RATE - 14)))
 		{//开始报警
 			alarm_status = true;
 		}
@@ -1224,6 +1258,14 @@ static void period_cycle_process(void * p_context)
 	if (Tilt<system_params.angle)
 	{
 		alarm_status = false;
+		alarm_timer_cont = 0;
+	}
+
+	//电池电量
+	if (battery_timer ++ > 60)
+	{
+		battery_status = true;
+		battery_timer = 0;
 	}
 }
 
@@ -1501,6 +1543,8 @@ int main(void)
     sec_params_init();
     printf(START_STRING);
 	SPI_Init();
+	adc_init();
+	battery_value = adc_start();
 	//gpiote初始化
     buttons_init();
 #if defined (DEBUG_MODE)
@@ -1554,6 +1598,14 @@ int main(void)
 			message_received = false;
 			message_process(rec_data_buffer);
 		}
+		if (alarm_status == true)
+		{
+			nrf_gpio_pin_set(ADVERTISING_LED_PIN_NO);
+		}
+		else
+		{
+			nrf_gpio_pin_clear(ADVERTISING_LED_PIN_NO);
+		}
 		if (data_send_status == true)
 		{//开始发送数据
 			if (ble_connect_status == true)
@@ -1603,6 +1655,11 @@ int main(void)
 			{
 				data_send_status = false;
 			}
+		}
+		if (battery_status == true)
+		{
+			battery_value = adc_start();
+			battery_status = false;
 		}
         power_manage();
     }

@@ -276,8 +276,6 @@ uint16_t queue_get_entries(void)
 //存储系统参数
 void system_params_save(system_params_t * params)
 {
-	pstorage_size_t offset;
-	pstorage_size_t block_num;
 	pstorage_handle_t dest_block_id;
 	while (queue_status != QUEUE_STATUS_UPDATE_READY);
 

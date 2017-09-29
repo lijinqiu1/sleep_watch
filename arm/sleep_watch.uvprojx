@@ -312,7 +312,7 @@
               <OCR_RVCT4>
                 <Type>1</Type>
                 <StartAddress>0x16000</StartAddress>
-                <Size>0x29000</Size>
+                <Size>0x25000</Size>
               </OCR_RVCT4>
               <OCR_RVCT5>
                 <Type>1</Type>
@@ -367,7 +367,7 @@
             <v6LangP>0</v6LangP>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>BOARD_PCA10001 NRF51,DEBUG_NRF_USER, BLE_STACK_SUPPORT_REQD SPI_MASTER_1_ENABLE ENABLE_DEBUG_LOG_SUPPORT ADV_BOND DEBUG_MODE</Define>
+              <Define>BOARD_PCA10001 NRF51,DEBUG_NRF_USER, BLE_STACK_SUPPORT_REQD SPI_MASTER_1_ENABLE ENABLE_DEBUG_LOG_SUPPORT ADV_BOND</Define>
               <Undefine></Undefine>
               <IncludePath>..;..\Include;..\Include\app_common;..\Include\ble;..\Include\ble\ble_services;..\Include\s110;..\Include\sd_common;..\Include\serialization\connectivity;..\Include\ble\device_manager;..\Include\sdk;..\User\Inc</IncludePath>
             </VariousControls>

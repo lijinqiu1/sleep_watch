@@ -36,9 +36,9 @@ extern uint16_t ll_McuPrecisionCount(void);
 /*********************************************************************
  * LOCAL VARIABLES
  */
-static uint16_t previousLLTimerTick = 0;
-static uint16_t remUsTicks = 0;
-static uint16_t timeMSec = 0;
+//static uint16_t previousLLTimerTick = 0;
+//static uint16_t remUsTicks = 0;
+//static uint16_t timeMSec = 0;
 
 // number of seconds since   2010.1.1.  00:00:00
 UTCTime TimeSeconds = 0;
