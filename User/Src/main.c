@@ -134,17 +134,17 @@ static  app_timer_id_t m_sec_req_timer_id;
 #define EVENT_QUEUE_PUSH				(uint32_t)(0x00000001 << 4)                  /**< 角度存储 >**/
 static void period_cycle_process(void * p_context);
 
-static uint32_t event_status = 0;      //事件存储变量
+static uint32_t event_status = 0;        //事件存储变量
 static bool key_pressed = false;         //记录按键事件
 static bool adv_status = false;          //广播状态
 static bool work_status = false;         //设备工作状态
-static bool message_received = false;  //信息接收
-static bool data_send_status = false;  //发送数据
-static bool ble_connect_status = false;//蓝牙连接状态
-static bool tilt_init_flag = false;    //角度值初始化
-static bool alarm_status = false;      //报警状态
+static bool message_received = false;    //信息接收
+static bool data_send_status = false;    //发送数据
+static bool ble_connect_status = false;  //蓝牙连接状态
+static bool tilt_init_flag = false;      //角度值初始化
+static bool alarm_status = false;        //报警状态
 static bool tilt_push = false;           //数据存储
-static bool battery_status = false;    //测量电池电压
+static bool battery_status = false;      //测量电池电压
 static float Tilt;                       //当前倾角变化值
 static uint8_t rec_data_buffer[20];      //缓存接收到的数据
 static uint16_t battery_value;           //电池电量
@@ -1217,7 +1217,7 @@ static void period_cycle_process(void * p_context)
 					work_status = false;
 				}
 			}
-			else
+			else if(key_timer < 6)
 			{
 				//长按
 				if (adv_status == false)
@@ -1225,6 +1225,11 @@ static void period_cycle_process(void * p_context)
 					adv_status = true;
 					advertising_start();
 				}
+			}
+			else if(key_timer > 10)
+			{//长按超过10s进入在线升级模式
+				// On assert, the system can only recover with a reset.
+				NVIC_SystemReset();
 			}
 			key_timer = 0;
 		}
@@ -1243,8 +1248,11 @@ static void period_cycle_process(void * p_context)
 		event_status&= ~EVENT_DATA_SENDED;
 		data_send_completed = 0;
 		app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
-		err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
-        APP_ERROR_CHECK(err_code);
+		if (ble_connect_status == true)
+		{
+			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+			APP_ERROR_CHECK(err_code);
+		}
 	}
 	if ((work_status == true)&&(angle_timer++ >= (ANGLE_SMAPLE_RATE-1)))
 	{
@@ -1460,7 +1468,7 @@ static void message_process(uint8_t *ch)
 		data_array[0] = 0xA5;
 		data_array[1] = 0x02;
 		data_array[2] = CMD_GET_BATTERY;
-		data_array[3] = 100;
+		data_array[3] = (uint8_t)battery_value;
 		data_array[4] = 0x80;
 		err_code = ble_nus_send_string(&m_nus, data_array, 5);
         if (err_code != NRF_ERROR_INVALID_STATE)
