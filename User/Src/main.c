@@ -1191,6 +1191,11 @@ static void period_cycle_process(void * p_context)
 		if (key_status == 0)
 		{
 			key_timer ++;
+			if(key_timer > 10)
+			{//长按超过10s进入在线升级模式
+				// On assert, the system can only recover with a reset.
+				NVIC_SystemReset();
+			}
 		}
 		else
 		{
@@ -1225,11 +1230,6 @@ static void period_cycle_process(void * p_context)
 					adv_status = true;
 					advertising_start();
 				}
-			}
-			else if(key_timer > 10)
-			{//长按超过10s进入在线升级模式
-				// On assert, the system can only recover with a reset.
-				NVIC_SystemReset();
 			}
 			key_timer = 0;
 		}
