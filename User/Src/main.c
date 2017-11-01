@@ -47,7 +47,7 @@
 #include "app_gpiote.h"
 #include "device_manager.h"
 #include "app_trace.h"
-
+#include "nrf_gpiote.h"
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
 
@@ -56,7 +56,7 @@
 #define ADVERTISING_LED_PIN_NO          LED_0                                       /**< LED to indicate advertising state. */
 #define CONNECTED_LED_PIN_NO            LED_1                                       /**< LED to indicate connected state. */
 
-#define DEVICE_NAME                     "Nordic_UART"                               /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "Watch"                                     /**< Name of device. Will be included in the advertising data. */
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
@@ -120,6 +120,9 @@ static ble_gap_addr_t                   m_ble_addr;                             
 static app_gpiote_user_id_t gpiote_user_id;
 static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
 
+//pwm
+#define MAX_SAMPLE_LEVELS (256UL)  /**< Maximum number of sample levels. */
+#define TIMER_PRESCALERS  6U       /**< Prescaler setting for timer. */
 //周期性时间
 static app_timer_id_t p_timer;
 //配对password
@@ -189,7 +192,7 @@ void app_error_handler(uint32_t error_code, uint32_t line_num, const uint8_t * p
     //                any communication.
     //                Use with care. Un-comment the line below to use.
     // ble_debug_assert_handler(error_code, line_num, p_file_name);
-	printf("0x%x %d %s\r\n", error_code,line_num,p_file_name);
+	app_trace_log("0x%x %d %s\r\n", error_code,line_num,p_file_name);
 
     // On assert, the system can only recover with a reset.
     NVIC_SystemReset();
@@ -1164,7 +1167,7 @@ static uint16_t adc_start(void)
 	value = NRF_ADC->RESULT * 1.0;
 	value = value*1.2/1024;
 	value *= 3;
-	app_trace_log("ADC: %f\r\n",value);
+//	app_trace_log("ADC: %f\r\n",value);
 	return (uint16_t)(value * 1000);
 }
 /****************周期事件处理函数*********************/
@@ -1256,7 +1259,7 @@ static void period_cycle_process(void * p_context)
 	}
 	if ((work_status == true)&&(angle_timer++ >= (ANGLE_SMAPLE_RATE-1)))
 	{
-		if((Tilt > system_params.angle)&&(alarm_timer_cont++ >= (system_params.time/ANGLE_SMAPLE_RATE - 14)))
+		if((Tilt > system_params.angle)&&(alarm_timer_cont++ >= (system_params.time/ANGLE_SMAPLE_RATE - 1)))
 		{//开始报警
 			alarm_status = true;
 		}
@@ -1310,7 +1313,7 @@ static float calculateTilt_A(float ax, float ay, float az)
 //返回角度差
 //flag = 1重新获取角度基准值，flag = 0开始计算
 //以Y轴作为转动轴
-static float calculateTilt_run(float ax, float ay, float az)
+static float calculateTilt_run_A(float ax, float ay, float az)
 {
 	//初始基准角度值
 	static float First_Tiltangle = 0;
@@ -1360,19 +1363,93 @@ static float calculateTilt_run(float ax, float ay, float az)
 
 }
 
-//static float calculateTilt_B(float ax, float ay, float az)
-//{
-//	/*
-//	*关于计算前后转动角度超值问题，记录前一时刻x,y,加速度正负，由正变负+90°
-//	*/
-//	float temp;
-//	float Tiltangle = 0;
-//	temp = sqrt(ax*ax + ay*ay) / az;
-//	Tiltangle = atan(temp);
-//	Tiltangle = Tiltangle/PI*180;
-//	return Tiltangle;
-//}
+static float calculateTilt_B(float ax, float ay, float az)
+{
+	/*
+	*关于计算前后转动角度超值问题，记录前一时刻x,y,加速度正负，由正变负+90°
+	*/
+	float temp;
+	float g = 9.80665;
+	float Tiltangle = 0;
+	temp = ((sqrt(2)/2)*g/10);
+	if (fabs(ax) < temp)
+	{
+		Tiltangle = asin(fabs(ax));
+//		if (Tiltangle < 0) {
+//			Tiltangle = - Tiltangle;
+//		}
+		Tiltangle = Tiltangle/PI*180;
+//		app_trace_log("asin Tiltangle:%f\n",Tiltangle);
+	}
+	else
+	{
+		Tiltangle = acos(fabs(ax));
+		Tiltangle = Tiltangle/PI*180;
+		Tiltangle = 90-Tiltangle;
+//		app_trace_log("acos Tiltangle:%f\n",Tiltangle);
+	}
+	if((az < 0)&&(ax > 0))
+	{
+		Tiltangle = 180 - Tiltangle;
+	}
+	else if ((az < 0)&&(ax<0))
+	{
+		Tiltangle = 180 + Tiltangle;
+	}
+	else if ((az > 0) && (ax < 0))
+	{
+		Tiltangle = 360 - Tiltangle;
+	}
+	
+	return Tiltangle;
+}
+//返回角度差
+//flag = 1重新获取角度基准值，flag = 0开始计算
+//以Y轴作为转动轴
+static float calculateTilt_run_B(float ax, float ay, float az)
+{
+	//初始基准角度值
+	static float First_Tiltangle = 0;
+	float Tiltangle = 0;
+	//三轴初始位置 1:>=0, 0:<0
+	static uint8_t flag_x;
+	static uint8_t flag_z;
 
+	if (tilt_init_flag == 1)
+	{
+		tilt_init_flag = 0;
+		First_Tiltangle = calculateTilt_B(ax,ay,az);
+		if (ax < 0)
+		{
+			First_Tiltangle = 360 - First_Tiltangle;
+		}
+		flag_x = (ax >= 0);
+		flag_z = (az >= 0);
+	}
+	Tiltangle = calculateTilt_B(ax,ay,az);
+	app_trace_log("First_Tiltangle %f,Tiltangle %f\n",First_Tiltangle,Tiltangle);
+	if (First_Tiltangle < Tiltangle)
+	{
+		if (flag_x ^ (ax >= 0))
+		{
+			return (360 -(Tiltangle - First_Tiltangle));
+		}
+		else
+		{
+			return (Tiltangle - First_Tiltangle);
+		}
+	}
+	else
+	{
+		if (flag_x ^ (ax >= 0))
+		{
+			return (360 -(First_Tiltangle - Tiltangle));
+		}
+		else
+			return (First_Tiltangle - Tiltangle);
+	}
+
+}
 //报文处理函数
 static void message_process(uint8_t *ch)
 {
@@ -1520,6 +1597,121 @@ void queue_test(void)
 	pstorage_load(test, &dest_block_id, sizeof(test),0);
 
 }
+/** @brief Function for handling timer 2 peripheral interrupts.
+ */
+void TIMER2_IRQHandler(void)
+{
+    static bool cc0_turn = false; /**< Keeps track of which CC register to be used. */
+	static uint32_t next_sample = 32;
+	static bool dir = 0;
+	static uint8_t cont = 0;
+	//呼吸灯
+    if ((NRF_TIMER2->EVENTS_COMPARE[1] != 0) && 
+       ((NRF_TIMER2->INTENSET & TIMER_INTENSET_COMPARE1_Msk) != 0))
+    {
+        // Sets the next CC1 value
+        NRF_TIMER2->EVENTS_COMPARE[1] = 0;
+        NRF_TIMER2->CC[1]             = (NRF_TIMER2->CC[1] + MAX_SAMPLE_LEVELS);
+    
+        // Every other interrupt CC0 and CC2 will be set to their next values.
+		if (cont++ > 200)
+		{
+			if (dir == 0)
+			{
+				next_sample += 16;
+			}
+			else
+			{
+				next_sample -= 16;
+			}
+			if (next_sample == 240)
+			{
+				dir = 1;
+			}
+			else if (next_sample == 16)
+			{
+				dir = 0;
+			}
+			cont = 0;
+		}
+        if (cc0_turn)
+        {
+            NRF_TIMER2->CC[0] = NRF_TIMER2->CC[1] + next_sample;
+        }
+        else
+        {
+            NRF_TIMER2->CC[2] = NRF_TIMER2->CC[1] + next_sample;
+        }
+        // Next turn the other CC will get its value.
+        cc0_turn = !cc0_turn;
+    }
+}
+
+void pwm_led_init(uint32_t pin_number)
+{
+	//gpiote_init
+	// Connect GPIO input buffers and configure PWM_OUTPUT_PIN_NUMBER as an output.
+    nrf_gpio_cfg_output(pin_number);
+
+    nrf_gpio_pin_clear(pin_number);
+    // Configure GPIOTE channel 0 to toggle the PWM pin state
+    // @note Only one GPIOTE task can be connected to an output pin.
+    nrf_gpiote_task_config(0, pin_number, \
+                           NRF_GPIOTE_POLARITY_TOGGLE, NRF_GPIOTE_INITIAL_VALUE_LOW);
+	//ppi_init
+    // Configure PPI channel 0 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[0] match.
+	sd_ppi_channel_assign(0,&NRF_TIMER2->EVENTS_COMPARE[0],&NRF_GPIOTE->TASKS_OUT[0]);
+
+    // Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[1] match.
+	sd_ppi_channel_assign(1,&NRF_TIMER2->EVENTS_COMPARE[1],&NRF_GPIOTE->TASKS_OUT[0]);
+
+    // Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[2] match.
+	sd_ppi_channel_assign(2,&NRF_TIMER2->EVENTS_COMPARE[2],&NRF_GPIOTE->TASKS_OUT[0]);
+
+    
+    // Enable PPI channels 0-2.
+	sd_ppi_channel_enable_set((PPI_CHEN_CH0_Enabled << PPI_CHEN_CH0_Pos)
+                    | (PPI_CHEN_CH1_Enabled << PPI_CHEN_CH1_Pos)
+                    | (PPI_CHEN_CH2_Enabled << PPI_CHEN_CH2_Pos));
+    //timer2_init
+	NRF_TIMER2->MODE      = TIMER_MODE_MODE_Timer;
+    NRF_TIMER2->BITMODE   = TIMER_BITMODE_BITMODE_16Bit << TIMER_BITMODE_BITMODE_Pos;
+    NRF_TIMER2->PRESCALER = TIMER_PRESCALERS;
+
+    // Clears the timer, sets it to 0.
+    NRF_TIMER2->TASKS_CLEAR = 1;
+
+    // Load the initial values to TIMER2 CC registers.
+    NRF_TIMER2->CC[0] = MAX_SAMPLE_LEVELS + 8;
+    NRF_TIMER2->CC[1] = MAX_SAMPLE_LEVELS;
+    // CC2 will be set on the first CC1 interrupt.
+    NRF_TIMER2->CC[2] = 0;
+
+    // Interrupt setup.
+    NRF_TIMER2->INTENSET = (TIMER_INTENSET_COMPARE1_Enabled << TIMER_INTENSET_COMPARE1_Pos);
+    // Enabling constant latency as indicated by PAN 11 "HFCLK: Base current with HFCLK 
+    // running is too high" found at Product Anomaly document found at
+    // https://www.nordicsemi.com/eng/Products/Bluetooth-R-low-energy/nRF51822/#Downloads
+    //
+    // @note This example does not go to low power mode therefore constant latency is not needed.
+    //       However this setting will ensure correct behaviour when routing TIMER events through 
+
+
+    // Enable interrupt on Timer 2.
+    NVIC_EnableIRQ(TIMER2_IRQn);
+
+    // Start the timer.
+    NRF_TIMER2->TASKS_START = 1;
+}
+
+void pwm_led_deinit(void)
+{
+	NRF_TIMER2->TASKS_START = 0;
+	nrf_gpiote_unconfig(0);
+	sd_ppi_channel_enable_clr((PPI_CHEN_CH0_Enabled << PPI_CHEN_CH0_Pos)
+                    | (PPI_CHEN_CH1_Enabled << PPI_CHEN_CH1_Pos)
+                    | (PPI_CHEN_CH2_Enabled << PPI_CHEN_CH2_Pos));
+}
 /**@brief  Application main function.
  */
 int main(void)
@@ -1553,12 +1745,12 @@ int main(void)
 	SPI_Init();
 	adc_init();
 	battery_value = adc_start();
+    pwm_led_init(CONNECTED_LED_PIN_NO);
 	//gpiote初始化
     buttons_init();
 #if defined (DEBUG_MODE)
 	advertising_start();
 #endif
-
 //	LIS3DH_GetWHO_AM_I(&data);
 //	simple_uart_put(data);
 
@@ -1579,10 +1771,10 @@ int main(void)
 				az = Axes_Raw_Data.AXIS_Z/16384.0;
 				app_trace_log("X=%6f Y=%6f Z=%6f \r\n",
 					ax,ay,az);
-				Tilt = calculateTilt_run(ax,ay,az);
+				Tilt = calculateTilt_run_B(ax,ay,az);
 				app_trace_log("Tilt = %6f \r\n", Tilt);
-				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
-					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
+//				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
+//					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
 			}
 			//存储角度值
 			if (tilt_push == true)
