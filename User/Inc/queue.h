@@ -75,6 +75,7 @@ uint8_t queue_pop(queue_items_t *item);
 void queue_push(queue_items_t *item);
 uint16_t queue_get_entries(void);
 void system_params_save(system_params_t * params);
+void queue_sync(void);
 
 
 #endif

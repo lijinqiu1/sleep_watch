@@ -1223,6 +1223,8 @@ static void period_cycle_process(void * p_context)
 				{
 					// stop work
 					work_status = false;
+					//同步队列信息
+					queue_sync();
 				}
 			}
 			else if(key_timer < 6)
@@ -1400,7 +1402,7 @@ static float calculateTilt_B(float ax, float ay, float az)
 	{
 		Tiltangle = 360 - Tiltangle;
 	}
-	
+
 	return Tiltangle;
 }
 //返回角度差
@@ -1606,13 +1608,13 @@ void TIMER2_IRQHandler(void)
 	static bool dir = 0;
 	static uint8_t cont = 0;
 	//呼吸灯
-    if ((NRF_TIMER2->EVENTS_COMPARE[1] != 0) && 
+    if ((NRF_TIMER2->EVENTS_COMPARE[1] != 0) &&
        ((NRF_TIMER2->INTENSET & TIMER_INTENSET_COMPARE1_Msk) != 0))
     {
         // Sets the next CC1 value
         NRF_TIMER2->EVENTS_COMPARE[1] = 0;
         NRF_TIMER2->CC[1]             = (NRF_TIMER2->CC[1] + MAX_SAMPLE_LEVELS);
-    
+
         // Every other interrupt CC0 and CC2 will be set to their next values.
 		if (cont++ > 200)
 		{
@@ -1668,7 +1670,7 @@ void pwm_led_init(uint32_t pin_number)
     // Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[2] match.
 	sd_ppi_channel_assign(2,&NRF_TIMER2->EVENTS_COMPARE[2],&NRF_GPIOTE->TASKS_OUT[0]);
 
-    
+
     // Enable PPI channels 0-2.
 	sd_ppi_channel_enable_set((PPI_CHEN_CH0_Enabled << PPI_CHEN_CH0_Pos)
                     | (PPI_CHEN_CH1_Enabled << PPI_CHEN_CH1_Pos)
@@ -1689,12 +1691,12 @@ void pwm_led_init(uint32_t pin_number)
 
     // Interrupt setup.
     NRF_TIMER2->INTENSET = (TIMER_INTENSET_COMPARE1_Enabled << TIMER_INTENSET_COMPARE1_Pos);
-    // Enabling constant latency as indicated by PAN 11 "HFCLK: Base current with HFCLK 
+    // Enabling constant latency as indicated by PAN 11 "HFCLK: Base current with HFCLK
     // running is too high" found at Product Anomaly document found at
     // https://www.nordicsemi.com/eng/Products/Bluetooth-R-low-energy/nRF51822/#Downloads
     //
     // @note This example does not go to low power mode therefore constant latency is not needed.
-    //       However this setting will ensure correct behaviour when routing TIMER events through 
+    //       However this setting will ensure correct behaviour when routing TIMER events through
 
 
     // Enable interrupt on Timer 2.
@@ -1827,6 +1829,8 @@ int main(void)
 			        {
 			            APP_ERROR_CHECK(err_code);
 			        }
+					//数据发送完成同步队列信息
+					queue_sync();
 				}
 				else
 				{
