@@ -27,27 +27,27 @@
 #include "nordic_common.h"
 #include "nrf.h"
 #include "nrf51_bitfields.h"
+#include "nrf_gpiote.h"
 #include "ble_hci.h"
 #include "ble_advdata.h"
 #include "ble_conn_params.h"
-#include "softdevice_handler.h"
-#include "app_timer.h"
-#include "app_button.h"
 #include "ble_nus.h"
-#include "simple_uart.h"
 #include "boards.h"
 #include "ble_error_log.h"
 #include "ble_debug_assert_handler.h"
+#include "softdevice_handler.h"
+#include "app_timer.h"
+#include "app_button.h"
 #include "app_util_platform.h"
-#include "spi_master.h"
+#include "app_gpiote.h"
+#include "app_trace.h"
+#include "simple_uart.h"
 #include "lis3dh_driver.h"
 #include "calender.h"
 #include "queue.h"
 #include "pstorage.h"
-#include "app_gpiote.h"
 #include "device_manager.h"
-#include "app_trace.h"
-#include "nrf_gpiote.h"
+#include "pwm.h"
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
 
@@ -120,9 +120,6 @@ static ble_gap_addr_t                   m_ble_addr;                             
 static app_gpiote_user_id_t gpiote_user_id;
 static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event_pins_high_to_low);
 
-//pwm
-#define MAX_SAMPLE_LEVELS (256UL)  /**< Maximum number of sample levels. */
-#define TIMER_PRESCALERS  6U       /**< Prescaler setting for timer. */
 //周期性时间
 static app_timer_id_t p_timer;
 //配对password
@@ -1059,89 +1056,7 @@ static void power_manage(void)
 
 //    /**@snippet [Handling the data received over UART] */
 //}
-/******************SPI Driver**********************/
-static bool transmission_completed = 0; //spi传输状态
-static uint8_t rx_buffer[2];
-static uint8_t tx_buffer[2];
-static void SPI_Master_Event_Handler(spi_master_evt_t spi_master_evt)
-{
-	switch (spi_master_evt.evt_type)
-	{
-		case SPI_MASTER_EVT_TRANSFER_COMPLETED:
-			transmission_completed = true;//传输完成
-			break;
-		default :
-			break;
-	}
-}
 
-static void SPI_Init(void)
-{
-	spi_master_config_t spi_config = SPI_MASTER_INIT_DEFAULT;
-
-	spi_config.SPI_Freq = SPI_FREQUENCY_FREQUENCY_K125;
-	spi_config.SPI_Pin_SCK = SPIM1_SCK_PIN;
-	spi_config.SPI_Pin_MISO = SPIM1_MISO_PIN;
-	spi_config.SPI_Pin_MOSI = SPIM1_MOSI_PIN;
-	spi_config.SPI_Pin_SS = SPIM1_SS_PIN;
-	spi_config.SPI_CONFIG_CPOL = SPI_CONFIG_CPOL_ActiveLow;
-	spi_config.SPI_CONFIG_CPHA = SPI_CONFIG_CPHA_Trailing;
-	spi_config.SPI_CONFIG_ORDER = SPI_CONFIG_ORDER_MsbFirst;
-
-	uint32_t err_code = spi_master_open(SPI_MASTER_1, &spi_config);
-	if (err_code != NRF_SUCCESS)
-	{
-
-	}
-
-	spi_master_evt_handler_reg(SPI_MASTER_1,SPI_Master_Event_Handler);
-
-//	nrf_gpio_pin_clear(SPIM0_SS_PIN);
-}
-
-uint8_t SPI_Mems_Read_Reg(uint8_t reg)
-{
-	uint32_t err_code = 0;
-	tx_buffer[0] = reg;
-	tx_buffer[1] = 0;
-	err_code = spi_master_send_recv(SPI_MASTER_1,tx_buffer,2,rx_buffer,2);
-	if (err_code != NRF_SUCCESS)
-	{
-
-	}
-	while( transmission_completed==0);
-	transmission_completed = 0;
-	return rx_buffer[1];
-}
-
-void SPI_Mems_Write_Reg(uint8_t WriteAddr, uint8_t Data)
-{
-	uint32_t err_code = 0;
-	tx_buffer[0] = WriteAddr;
-	tx_buffer[1] = Data;
-	err_code = spi_master_send_recv(SPI_MASTER_1,tx_buffer,2,rx_buffer,2);
-	if (err_code != NRF_SUCCESS)
-	{
-
-	}
-	while( transmission_completed==0);
-	transmission_completed = 0;
-}
-//3轴传感器初始化
-static void LIS3DH_Init(void)
-{
-	//设置采样率
-	LIS3DH_SetODR(LIS3DH_ODR_100Hz);
-
-	//设置工作模式
-	LIS3DH_SetMode(LIS3DH_NORMAL);
-
-	//设置扫描范围 正负2g
-	LIS3DH_SetFullScale(LIS3DH_FULLSCALE_2);
-
-	//使能3轴
-	LIS3DH_SetAxis(LIS3DH_X_ENABLE | LIS3DH_Y_ENABLE | LIS3DH_Z_ENABLE);
-}
 /****************ADC**********************************/
 static void adc_init(void)
 {
@@ -1599,121 +1514,7 @@ void queue_test(void)
 	pstorage_load(test, &dest_block_id, sizeof(test),0);
 
 }
-/** @brief Function for handling timer 2 peripheral interrupts.
- */
-void TIMER2_IRQHandler(void)
-{
-    static bool cc0_turn = false; /**< Keeps track of which CC register to be used. */
-	static uint32_t next_sample = 32;
-	static bool dir = 0;
-	static uint8_t cont = 0;
-	//呼吸灯
-    if ((NRF_TIMER2->EVENTS_COMPARE[1] != 0) &&
-       ((NRF_TIMER2->INTENSET & TIMER_INTENSET_COMPARE1_Msk) != 0))
-    {
-        // Sets the next CC1 value
-        NRF_TIMER2->EVENTS_COMPARE[1] = 0;
-        NRF_TIMER2->CC[1]             = (NRF_TIMER2->CC[1] + MAX_SAMPLE_LEVELS);
 
-        // Every other interrupt CC0 and CC2 will be set to their next values.
-		if (cont++ > 200)
-		{
-			if (dir == 0)
-			{
-				next_sample += 16;
-			}
-			else
-			{
-				next_sample -= 16;
-			}
-			if (next_sample == 240)
-			{
-				dir = 1;
-			}
-			else if (next_sample == 16)
-			{
-				dir = 0;
-			}
-			cont = 0;
-		}
-        if (cc0_turn)
-        {
-            NRF_TIMER2->CC[0] = NRF_TIMER2->CC[1] + next_sample;
-        }
-        else
-        {
-            NRF_TIMER2->CC[2] = NRF_TIMER2->CC[1] + next_sample;
-        }
-        // Next turn the other CC will get its value.
-        cc0_turn = !cc0_turn;
-    }
-}
-
-void pwm_led_init(uint32_t pin_number)
-{
-	//gpiote_init
-	// Connect GPIO input buffers and configure PWM_OUTPUT_PIN_NUMBER as an output.
-    nrf_gpio_cfg_output(pin_number);
-
-    nrf_gpio_pin_clear(pin_number);
-    // Configure GPIOTE channel 0 to toggle the PWM pin state
-    // @note Only one GPIOTE task can be connected to an output pin.
-    nrf_gpiote_task_config(0, pin_number, \
-                           NRF_GPIOTE_POLARITY_TOGGLE, NRF_GPIOTE_INITIAL_VALUE_LOW);
-	//ppi_init
-    // Configure PPI channel 0 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[0] match.
-	sd_ppi_channel_assign(0,&NRF_TIMER2->EVENTS_COMPARE[0],&NRF_GPIOTE->TASKS_OUT[0]);
-
-    // Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[1] match.
-	sd_ppi_channel_assign(1,&NRF_TIMER2->EVENTS_COMPARE[1],&NRF_GPIOTE->TASKS_OUT[0]);
-
-    // Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[2] match.
-	sd_ppi_channel_assign(2,&NRF_TIMER2->EVENTS_COMPARE[2],&NRF_GPIOTE->TASKS_OUT[0]);
-
-
-    // Enable PPI channels 0-2.
-	sd_ppi_channel_enable_set((PPI_CHEN_CH0_Enabled << PPI_CHEN_CH0_Pos)
-                    | (PPI_CHEN_CH1_Enabled << PPI_CHEN_CH1_Pos)
-                    | (PPI_CHEN_CH2_Enabled << PPI_CHEN_CH2_Pos));
-    //timer2_init
-	NRF_TIMER2->MODE      = TIMER_MODE_MODE_Timer;
-    NRF_TIMER2->BITMODE   = TIMER_BITMODE_BITMODE_16Bit << TIMER_BITMODE_BITMODE_Pos;
-    NRF_TIMER2->PRESCALER = TIMER_PRESCALERS;
-
-    // Clears the timer, sets it to 0.
-    NRF_TIMER2->TASKS_CLEAR = 1;
-
-    // Load the initial values to TIMER2 CC registers.
-    NRF_TIMER2->CC[0] = MAX_SAMPLE_LEVELS + 8;
-    NRF_TIMER2->CC[1] = MAX_SAMPLE_LEVELS;
-    // CC2 will be set on the first CC1 interrupt.
-    NRF_TIMER2->CC[2] = 0;
-
-    // Interrupt setup.
-    NRF_TIMER2->INTENSET = (TIMER_INTENSET_COMPARE1_Enabled << TIMER_INTENSET_COMPARE1_Pos);
-    // Enabling constant latency as indicated by PAN 11 "HFCLK: Base current with HFCLK
-    // running is too high" found at Product Anomaly document found at
-    // https://www.nordicsemi.com/eng/Products/Bluetooth-R-low-energy/nRF51822/#Downloads
-    //
-    // @note This example does not go to low power mode therefore constant latency is not needed.
-    //       However this setting will ensure correct behaviour when routing TIMER events through
-
-
-    // Enable interrupt on Timer 2.
-    NVIC_EnableIRQ(TIMER2_IRQn);
-
-    // Start the timer.
-    NRF_TIMER2->TASKS_START = 1;
-}
-
-void pwm_led_deinit(void)
-{
-	NRF_TIMER2->TASKS_START = 0;
-	nrf_gpiote_unconfig(0);
-	sd_ppi_channel_enable_clr((PPI_CHEN_CH0_Enabled << PPI_CHEN_CH0_Pos)
-                    | (PPI_CHEN_CH1_Enabled << PPI_CHEN_CH1_Pos)
-                    | (PPI_CHEN_CH2_Enabled << PPI_CHEN_CH2_Pos));
-}
 /**@brief  Application main function.
  */
 int main(void)
@@ -1744,7 +1545,6 @@ int main(void)
     conn_params_init();
     sec_params_init();
     printf(START_STRING);
-	SPI_Init();
 	adc_init();
 	battery_value = adc_start();
     pwm_led_init(CONNECTED_LED_PIN_NO);
