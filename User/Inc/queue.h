@@ -15,7 +15,8 @@ typedef struct {
 	uint16_t time; //干涉时间
 	uint8_t mac_add[6]; //设备的MAC地址
 	uint16_t device_bonded; //设备绑定标志
-	uint16_t Reserved[2];
+	uint8_t moto_strong;
+	uint8_t Reserved;
 }system_params_t;
 
 typedef struct {

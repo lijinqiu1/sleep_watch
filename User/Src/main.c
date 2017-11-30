@@ -132,6 +132,7 @@ static  app_timer_id_t m_sec_req_timer_id;
 #define EVENT_DATA_SENDING				(uint32_t)(0x00000001 << 2)					 /**< 数据发送事件 >**/
 #define EVENT_DATA_SENDED               (uint32_t)(0x00000001 << 3)					 /**< 数据发送完成事件 >**/
 #define EVENT_QUEUE_PUSH				(uint32_t)(0x00000001 << 4)                  /**< 角度存储 >**/
+#define EVENT_ALARM_HAPPEN              (uint32_t)(0x00000001 << 5)                  /**< 报警产生 >**/
 static void period_cycle_process(void * p_context);
 
 static uint32_t event_status = 0;        //事件存储变量
@@ -1085,7 +1086,14 @@ static uint16_t adc_start(void)
 //	app_trace_log("ADC: %f\r\n",value);
 	return (uint16_t)(value * 1000);
 }
-/****************周期事件处理函数*********************/
+
+/***********************************报警管理***********************************/
+void alarm_manage(void)
+{
+
+}
+
+/*******************************周期事件处理函数*******************************/
 static bool lis3dh_flag = 0;
 //周期事件处理函数
 static void period_cycle_process(void * p_context)
@@ -1330,7 +1338,6 @@ static float calculateTilt_run_B(float ax, float ay, float az)
 	float Tiltangle = 0;
 	//三轴初始位置 1:>=0, 0:<0
 	static uint8_t flag_x;
-	static uint8_t flag_z;
 
 	if (tilt_init_flag == 1)
 	{
@@ -1341,7 +1348,6 @@ static float calculateTilt_run_B(float ax, float ay, float az)
 			First_Tiltangle = 360 - First_Tiltangle;
 		}
 		flag_x = (ax >= 0);
-		flag_z = (az >= 0);
 	}
 	Tiltangle = calculateTilt_B(ax,ay,az);
 	app_trace_log("First_Tiltangle %f,Tiltangle %f\n",First_Tiltangle,Tiltangle);
@@ -1547,9 +1553,10 @@ int main(void)
     printf(START_STRING);
 	adc_init();
 	battery_value = adc_start();
-    pwm_led_init(CONNECTED_LED_PIN_NO);
 	//gpiote初始化
     buttons_init();
+	//马达驱动初始化
+	pwm_moto_init();
 #if defined (DEBUG_MODE)
 	advertising_start();
 #endif
