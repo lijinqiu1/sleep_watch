@@ -32,7 +32,6 @@ typedef struct {
 /**************************干涉条件******************************/
 #define DEFAULT_ALARM_ANGLE				75  /**< 默认干涉角度 单位: °>**/
 #define DEFAULT_ALARM_TIME              120 /**< 默认干涉时间 单位: s >**/
-
 /**************************存储队列******************************/
 //flash block 大小
 #define FLASH_BLOCK               1024

@@ -124,7 +124,9 @@ static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event
 static app_timer_id_t p_timer;
 //配对password
 static  dm_handle_t                      m_dm_handle;                                       /**< Identifes the peer that is currently connected. */
-static  app_timer_id_t m_sec_req_timer_id;
+static  app_timer_id_t                   m_sec_req_timer_id;
+//按键防抖
+static app_timer_id_t                    m_key_tiemr_id;
 #define SECURITY_REQUEST_DELAY          APP_TIMER_TICKS(1000, APP_TIMER_PRESCALER)  /**< Delay after connection until Security Request is sent, if necessary (ticks). */
 /***********************************事件定义***************************************/
 #define EVENT_KEY_PRESSED               (uint32_t)(0x00000001 << 0)                  /**< 按键事件 >**/
@@ -133,19 +135,23 @@ static  app_timer_id_t m_sec_req_timer_id;
 #define EVENT_DATA_SENDED               (uint32_t)(0x00000001 << 3)					 /**< 数据发送完成事件 >**/
 #define EVENT_QUEUE_PUSH				(uint32_t)(0x00000001 << 4)                  /**< 角度存储 >**/
 #define EVENT_ALARM_HAPPEN              (uint32_t)(0x00000001 << 5)                  /**< 报警产生 >**/
+#define EVENT_ADV_START                 (uint32_t)(0x00000001 << 6)                  /**< 停止广播 >**/
+#define EVENT_ADV_STOP                  (uint32_t)(0x00000001 << 7)                  /**< 开始广播 >**/
+#define EVENT_BATTRY_VALUE              (uint32_t)(0x00000001 << 8)                  /**< 获取电池电压 >**/
+#define EVENT_LIS3DH_VALUE              (uint32_t)(0x00000001 << 9)                  /**< 获取3轴数据 >**/
+#define EVENT_TILT_PUSH                 (uint32_t)(0x00000001 <<10)                  /**< 角度值存储 >**/
+#define EVENT_BLE_DISCONNECT            (uint32_t)(0x00000001 <<11)                  /**< 断开蓝牙连接 >**/
+#define EVENT_DATA_SYNC                 (uint32_t)(0x00000001 <<12)                  /**< 同步队列数据 >**/
 static void period_cycle_process(void * p_context);
 
-static uint32_t event_status = 0;        //事件存储变量
+static uint32_t g_event_status = 0;        //事件存储变量
 static bool key_pressed = false;         //记录按键事件
 static bool adv_status = false;          //广播状态
 static bool work_status = false;         //设备工作状态
-static bool message_received = false;    //信息接收
 static bool data_send_status = false;    //发送数据
 static bool ble_connect_status = false;  //蓝牙连接状态
 static bool tilt_init_flag = false;      //角度值初始化
 static bool alarm_status = false;        //报警状态
-static bool tilt_push = false;           //数据存储
-static bool battery_status = false;      //测量电池电压
 static float Tilt;                       //当前倾角变化值
 static uint8_t rec_data_buffer[20];      //缓存接收到的数据
 static uint16_t battery_value;           //电池电量
@@ -250,6 +256,11 @@ static void sec_req_timeout_handler(void * p_context)
     }
 }
 
+static void key_req_timeout_handler(void * p_context)
+{
+
+}
+
 
 /**@brief   Function for Timer initialization.
  *
@@ -272,6 +283,11 @@ static void timers_init(void)
 								sec_req_timeout_handler);
 	APP_ERROR_CHECK(err_code);
 
+    //按键防抖定时器
+	err_code = app_timer_create(&m_key_tiemr_id,
+		                        APP_TIMER_MODE_SINGLE_SHOT,
+		                        key_req_timeout_handler);
+	APP_ERROR_CHECK(err_code);
 
 	err_code = app_timer_start(p_timer,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
 	APP_ERROR_CHECK(err_code);
@@ -395,7 +411,7 @@ void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t length)
 	if ((p_data[0] == 0xA5) && (p_data[length - 1] == 0x80))
 	{
 		memcpy(rec_data_buffer,p_data,length);
-		message_received = true;
+		g_event_status |= EVENT_MESSAGE_RECEIVED;
 	}
 }
 /**@snippet [Handling the data received over BLE] */
@@ -942,7 +958,8 @@ static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event
 		if (data_send_status == false) {
 			//数据传输功能时按键无效
 			//button 1 pressed
-			key_pressed = 1;
+			key_pressed = true;
+			//app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(2000,APP_TIMER_PRESCALER),NULL);
 		}
 	}
 }
@@ -1094,7 +1111,6 @@ void alarm_manage(void)
 }
 
 /*******************************周期事件处理函数*******************************/
-static bool lis3dh_flag = 0;
 //周期事件处理函数
 static void period_cycle_process(void * p_context)
 {
@@ -1105,7 +1121,6 @@ static void period_cycle_process(void * p_context)
 	static uint16_t data_send_completed = 0; //用于传输数据结束后关闭蓝牙连接
 	static uint16_t alarm_timer_cont = 0; //当角度大于干涉角度时开始计时，超时后报警
 	static uint16_t battery_timer = 0; //电池电量
-	uint32_t err_code;
 	//模拟日历
 	TimeSeconds ++;
 
@@ -1131,9 +1146,7 @@ static void period_cycle_process(void * p_context)
 				//短按
 				if (adv_status == true)
 				{
-					err_code = sd_ble_gap_adv_stop();
-					APP_ERROR_CHECK(err_code);
-					adv_status = false;
+					g_event_status |= EVENT_ADV_STOP;
 				}
 				if (work_status == false)
 				{
@@ -1147,7 +1160,7 @@ static void period_cycle_process(void * p_context)
 					// stop work
 					work_status = false;
 					//同步队列信息
-					queue_sync();
+					g_event_status|= EVENT_DATA_SYNC;
 				}
 			}
 			else if(key_timer < 6)
@@ -1155,8 +1168,7 @@ static void period_cycle_process(void * p_context)
 				//长按
 				if (adv_status == false)
 				{
-					adv_status = true;
-					advertising_start();
+					g_event_status |= EVENT_ADV_START;
 				}
 			}
 			key_timer = 0;
@@ -1167,41 +1179,46 @@ static void period_cycle_process(void * p_context)
 	if ((work_status == true)&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE))
 	{//使用三轴加速度采样
 		lis3dh_timer = 0;
-		lis3dh_flag = 1;
+		if (angle_timer++ >= (ANGLE_SMAPLE_RATE-1))
+		{
+			angle_timer = 0;
+			if((Tilt > system_params.angle)&&(alarm_timer_cont++ >= (system_params.time/ANGLE_SMAPLE_RATE - 1)))
+			{//开始报警
+				alarm_status = true;
+			}
+			//存储数据
+			g_event_status |= EVENT_TILT_PUSH;
+		}
+		if (Tilt<(system_params.angle - 15))
+		{//如果报警后身体翻转超过15°，取消报警
+			alarm_status = false;
+			alarm_timer_cont = 0;
+		}
+		g_event_status |= EVENT_LIS3DH_VALUE;
 	}
 
-	if ((event_status&EVENT_DATA_SENDED) && (data_send_completed++ >= 30))
+	if ((g_event_status & EVENT_DATA_SENDED) && (data_send_completed++ >= 30))
 	{
 		//数据传输完成后30s断开蓝牙连接
-		event_status&= ~EVENT_DATA_SENDED;
+		g_event_status&= ~EVENT_DATA_SENDED;
 		data_send_completed = 0;
-		app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
 		if (ble_connect_status == true)
 		{
-			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
-			APP_ERROR_CHECK(err_code);
+			g_event_status |= EVENT_BLE_DISCONNECT;
 		}
-	}
-	if ((work_status == true)&&(angle_timer++ >= (ANGLE_SMAPLE_RATE-1)))
-	{
-		if((Tilt > system_params.angle)&&(alarm_timer_cont++ >= (system_params.time/ANGLE_SMAPLE_RATE - 1)))
-		{//开始报警
-			alarm_status = true;
-		}
-		tilt_push = true;
-		angle_timer = 0;
-	}
-	if (Tilt<system_params.angle)
-	{
-		alarm_status = false;
-		alarm_timer_cont = 0;
 	}
 
 	//电池电量
 	if (battery_timer ++ > 60)
 	{
-		battery_status = true;
+		g_event_status |= EVENT_BATTRY_VALUE;
 		battery_timer = 0;
+	}
+
+	//报警管理
+	if (alarm_status == true)
+	{
+
 	}
 }
 
@@ -1569,9 +1586,8 @@ int main(void)
     // Enter main loop
     for (;;)
     {
-		if (lis3dh_flag == 1)
+		if (g_event_status & EVENT_LIS3DH_VALUE)
 		{
-			lis3dh_flag = 0;
 			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
 			if (response == 1) {
 				ConvertUTCTime(&time,TimeSeconds);
@@ -1586,7 +1602,7 @@ int main(void)
 //					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
 			}
 			//存储角度值
-			if (tilt_push == true)
+			if (g_event_status & EVENT_TILT_PUSH)
 			{
 				ConvertUTCTime(&time,TimeSeconds);
 				item.year = time.year - 2000;
@@ -1597,24 +1613,48 @@ int main(void)
 				item.second = time.seconds;
 				item.angle = (uint16_t)(Tilt*100);
 				queue_push(&item);
-				tilt_push = false;
+				g_event_status &= ~ EVENT_TILT_PUSH;
 				app_trace_log("data push y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
 					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
 			}
+			g_event_status &= ~EVENT_LIS3DH_VALUE;
 		}
-		if (message_received == true)
+		if (g_event_status & EVENT_MESSAGE_RECEIVED)
 		{//有数据接收
-			message_received = false;
 			message_process(rec_data_buffer);
+			g_event_status &= ~(EVENT_MESSAGE_RECEIVED);
 		}
-		if (alarm_status == true)
+		if (g_event_status & EVENT_BATTRY_VALUE)
 		{
-			nrf_gpio_pin_set(ADVERTISING_LED_PIN_NO);
+			battery_value = adc_start();
+			g_event_status &= ~(EVENT_BATTRY_VALUE);
 		}
-		else
+		if (g_event_status & EVENT_ADV_START)
 		{
-			nrf_gpio_pin_clear(ADVERTISING_LED_PIN_NO);
+			advertising_start();
+			adv_status = true;
+			g_event_status &= ~(EVENT_ADV_START);
 		}
+		if (g_event_status & EVENT_ADV_STOP)
+		{
+			err_code = sd_ble_gap_adv_stop();
+			APP_ERROR_CHECK(err_code);
+			adv_status = false;
+			g_event_status &= ~(EVENT_ADV_STOP);
+		}
+		if (g_event_status & EVENT_BLE_DISCONNECT)
+		{
+			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+			APP_ERROR_CHECK(err_code);
+			app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
+			g_event_status &= ~EVENT_BLE_DISCONNECT;
+		}
+		if (g_event_status & EVENT_DATA_SYNC)
+		{
+			queue_sync();
+			g_event_status &= ~EVENT_DATA_SYNC;
+		}
+		//数据发送
 		if (data_send_status == true)
 		{//开始发送数据
 			if (ble_connect_status == true)
@@ -1625,7 +1665,7 @@ int main(void)
 					data_send_status = false;
 					//led常亮
 					nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
-					event_status |= EVENT_DATA_SENDED;
+					g_event_status |= EVENT_DATA_SENDED;
 					//发送传输完成报文
 					data_array[0] = 0xA5;
 					data_array[1] = 0x01;
@@ -1637,7 +1677,7 @@ int main(void)
 			            APP_ERROR_CHECK(err_code);
 			        }
 					//数据发送完成同步队列信息
-					queue_sync();
+					g_event_status |= EVENT_DATA_SYNC;
 				}
 				else
 				{
@@ -1667,11 +1707,7 @@ int main(void)
 				data_send_status = false;
 			}
 		}
-		if (battery_status == true)
-		{
-			battery_value = adc_start();
-			battery_status = false;
-		}
+		//报警管理
         power_manage();
     }
 }

@@ -1,10 +1,11 @@
 #include <string.h>
 #include <stdint.h>
-#include "queue.h"
 #include "nrf.h"
 #include "nordic_common.h"
 #include "softdevice_handler.h"
 #include "pstorage.h"
+#include "pwm.h"
+#include "queue.h"
 
 //变量声明
 //系统参数信息
@@ -72,10 +73,17 @@ void queue_init(void)
 	//第一次开机flash里面没有存储数据
 		memset((char*)&queue_entries,0x00,sizeof(queue_entries));
 	}
-	if (system_params.angle == 0xFFFF || system_params.time )
+	if (system_params.angle == 0xFFFF)
 	{
 		system_params.angle =   DEFAULT_ALARM_ANGLE;
+	}
+	if ( system_params.time == 0xFFFF)
+	{
 		system_params.time = DEFAULT_ALARM_TIME;
+	}
+	if ( system_params.moto_strong == 0xFFFF )
+	{
+		system_params.moto_strong = DEFAULT_MOTO_STRONG;
 	}
 }
 

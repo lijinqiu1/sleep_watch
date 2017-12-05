@@ -9,6 +9,8 @@
 
 static PwmStatusEN_t pwm_status = PWM_STATUS_READY;
 static uint8_t pwm_moto_strong = 0;
+static uint8_t moto_time = 0; //记录震动时长
+static uint8_t moto_count = 0; //记录震动次数
 /** @brief Function for handling timer 2 peripheral interrupts.
  */
 void TIMER2_IRQHandler(void)
@@ -154,7 +156,7 @@ void pwm_led_stop(void)
                     | (PPI_CHEN_CH2_Enabled << PPI_CHEN_CH2_Pos));
 }
 
-void pwm_moto_init(void)
+static void pwm_moto_init(void)
 {
 	//gpiote_init
 	// Connect GPIO input buffers and configure PWM_OUTPUT_PIN_NUMBER as an output.
@@ -211,7 +213,7 @@ void pwm_moto_init(void)
 //    NRF_TIMER1->TASKS_START = 1;
 }
 
-void pwm_moto_deinit(void)
+static void pwm_moto_deinit(void)
 {
 	NRF_TIMER1->TASKS_START = 0;
 	nrf_gpiote_unconfig(1);
@@ -220,18 +222,30 @@ void pwm_moto_deinit(void)
                     | (PPI_CHEN_CH5_Enabled << PPI_CHEN_CH5_Pos));
 }
 
-void pwm_moto_start(void)
+static void pwm_moto_start(void)
 {
 	NRF_TIMER1->TASKS_START = 1;
 }
 
-void pwm_moto_stop(void)
+static void pwm_moto_stop(void)
 {
 	NRF_TIMER1->TASKS_START = 0;
 }
 //设置马达强度
-void pwm_moto_setpower(uint8_t power)
+static void pwm_moto_setpower(uint8_t power)
 {
 	pwm_moto_strong = power;
 }
 
+void alarm_start(void)
+{
+	if(system_params.moto_strong == MOTO_LEVEL_AUTO)
+	{
+
+	}
+}
+
+void alarm_stop(void)
+{
+
+}

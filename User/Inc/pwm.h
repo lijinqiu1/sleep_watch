@@ -14,6 +14,9 @@
 #define PWM_LED_PIN          12
 #define PWM_MOTO_PIN         16
 
+
+#define DEFAULT_MOTO_STRONG MOTO_LEVEL_AUTO
+
 typedef enum pwm_moto_level
 {
 	MOTO_LEVEL_0,
