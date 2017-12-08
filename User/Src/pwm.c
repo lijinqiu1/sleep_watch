@@ -236,12 +236,36 @@ static void pwm_moto_setpower(uint8_t power)
 {
 	pwm_moto_strong = power;
 }
+void alarm_init(void)
+{
 
+}
 void alarm_start(void)
 {
 	if(system_params.moto_strong == MOTO_LEVEL_AUTO)
 	{
 
+	}
+	else
+	{
+		switch (moto_time)
+		{
+		case 0:
+			pwm_moto_start();
+			moto_time ++;
+			break;
+		case 3:
+			pwm_moto_stop();
+			moto_time ++;
+			break;
+		case 9:
+			moto_time = 0;
+			moto_count++;
+			break;
+		default:
+			moto_time ++;
+			break;
+		}
 	}
 }
 
