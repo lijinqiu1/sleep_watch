@@ -5,7 +5,7 @@
 #include "adc.h"
 
 static Battery_Charge_Status_e battery_charge_cur_status = BATTERY_NOT_CHARGE;
-
+static uint16_t battery_value;
 void battery_init(void)
 {
     nrf_gpio_cfg_input(BQ24040_CHG_PIN, GPIO_PIN_CNF_PULL_Pullup);
@@ -15,7 +15,7 @@ void battery_init(void)
 
 void battery_manager(void)
 {
-    adc_start();
+    battery_value = adc_start();
     if (!nrf_gpio_pin_read(BQ24040_PG_PIN))
     {
         if(nrf_gpio_pin_read(BQ24040_CHG_PIN))
@@ -36,4 +36,9 @@ void battery_manager(void)
 Battery_Charge_Status_e battery_get_charege_status(void)
 {
     return battery_charge_cur_status;
+}
+
+uint16_t battery_get_value(void)
+{
+	return battery_value;
 }

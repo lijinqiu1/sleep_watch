@@ -14,6 +14,6 @@ typedef enum BATTERY_CHARGE_STATUS
 void battery_init(void);
 void battery_manager(void);
 void battery_get_status(void);
-void battery_get_value(void);
+uint16_t battery_get_value(void);
 
 #endif
