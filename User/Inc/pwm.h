@@ -12,7 +12,7 @@
 #define MOTO_STRONG_FULL     256
 
 #define PWM_LED_PIN          12
-#define PWM_MOTO_PIN         16
+#define PWM_MOTO_PIN         29
 
 
 #define DEFAULT_MOTO_STRONG MOTO_LEVEL_AUTO
@@ -34,11 +34,7 @@ typedef enum pwm_status
 	PWM_STATUS_LED,
 }PwmStatusEN_t;
 
-void pwm_led_start(void);
-void pwm_led_stop(void);
-void pwm_moto_init(void);
-void pwm_moto_start(void);
-void pwm_moto_setpower(uint8_t power);
-void pwm_moto_stop(void);
+
+void alarm_init(void);
 
 #endif

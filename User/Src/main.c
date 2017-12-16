@@ -32,10 +32,10 @@
 #include "ble_advdata.h"
 #include "ble_conn_params.h"
 #include "ble_nus.h"
-#include "boards.h"
 #include "ble_error_log.h"
 #include "ble_debug_assert_handler.h"
 #include "softdevice_handler.h"
+#include "boards.h"
 #include "app_timer.h"
 #include "app_button.h"
 #include "app_util_platform.h"
@@ -48,13 +48,13 @@
 #include "pstorage.h"
 #include "device_manager.h"
 #include "pwm.h"
+#include "adc.h"
+#include "led.h"
+#include "battery.h"
+
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
-
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
-
-#define ADVERTISING_LED_PIN_NO          LED_0                                       /**< LED to indicate advertising state. */
-#define CONNECTED_LED_PIN_NO            LED_1                                       /**< LED to indicate connected state. */
 
 #define DEVICE_NAME                     "Watch"                                     /**< Name of device. Will be included in the advertising data. */
 
@@ -69,7 +69,7 @@
 
 
 #define APP_TIMER_PRESCALER             0                                           /**< Value of the RTC1 PRESCALER register. */
-#define APP_TIMER_MAX_TIMERS            3                                           /**< Maximum number of simultaneously created timers. */
+#define APP_TIMER_MAX_TIMERS            4                                           /**< Maximum number of simultaneously created timers. */
 #define APP_TIMER_OP_QUEUE_SIZE         4                                           /**< Size of timer operation queues. */
 
 #define MIN_CONN_INTERVAL               MSEC_TO_UNITS(20, UNIT_1_25_MS)            /**< Minimum acceptable connection interval (20 ms), Connection interval uses 1.25 ms units. */
@@ -219,16 +219,6 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
     app_error_handler(DEAD_BEEF, line_num, p_file_name);
 }
 
-
-/**@brief   Function for the LEDs initialization.
- *
- * @details Initializes all LEDs used by this application.
- */
-static void leds_init(void)
-{
-    nrf_gpio_cfg_output(ADVERTISING_LED_PIN_NO);
-    nrf_gpio_cfg_output(CONNECTED_LED_PIN_NO);
-}
 
 /**@brief Function for handling the Security Request timer timeout.
  *
@@ -766,7 +756,6 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
     switch (p_ble_evt->header.evt_id)
     {
         case BLE_GAP_EVT_CONNECTED:
-            nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
 			adv_status = false;
 			ble_connect_status = true;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
@@ -776,7 +765,6 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
-            nrf_gpio_pin_clear(CONNECTED_LED_PIN_NO);
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
 			ble_connect_status = false;
 #if defined (ADV_WHITELIST)
@@ -1076,33 +1064,6 @@ static void power_manage(void)
 //}
 
 /****************ADC**********************************/
-static void adc_init(void)
-{
-	NRF_ADC->CONFIG = (2 << 0) //ADC转换精度10位
-	                | (2 << 2) //ADC测量值为输入的1/3
-	                | (0 << 5) //选择内部1.2V为参考电压
-	                | (4 << 8);//选择AIN2(P0.1)为ADC的输入
-
-	//使能adc end事件中断
-//	NRF_ADC->INTENSET = 0x01;
-
-	NRF_ADC->ENABLE = 0x01;
-}
-
-static uint16_t adc_start(void)
-{
-	float value = 0;
-
-	//开始转换
-	NRF_ADC->TASKS_START = 0x01;
-
-	while(NRF_ADC->BUSY & 1);
-	value = NRF_ADC->RESULT * 1.0;
-	value = value*1.2/1024;
-	value *= 3;
-//	app_trace_log("ADC: %f\r\n",value);
-	return (uint16_t)(value * 1000);
-}
 
 /***********************************报警管理***********************************/
 void alarm_manage(void)
@@ -1353,8 +1314,9 @@ static float calculateTilt_run_B(float ax, float ay, float az)
 	//初始基准角度值
 	static float First_Tiltangle = 0;
 	float Tiltangle = 0;
+    float Tiltangle_return = 0;
 	//三轴初始位置 1:>=0, 0:<0
-	static uint8_t flag_x;
+//	static uint8_t flag_x;
 
 	if (tilt_init_flag == 1)
 	{
@@ -1364,30 +1326,25 @@ static float calculateTilt_run_B(float ax, float ay, float az)
 		{
 			First_Tiltangle = 360 - First_Tiltangle;
 		}
-		flag_x = (ax >= 0);
+//		flag_x = (ax >= 0);
 	}
 	Tiltangle = calculateTilt_B(ax,ay,az);
 	app_trace_log("First_Tiltangle %f,Tiltangle %f\n",First_Tiltangle,Tiltangle);
-	if (First_Tiltangle < Tiltangle)
+    Tiltangle_return = First_Tiltangle - Tiltangle;
+	if (Tiltangle_return < -180.0)
 	{
-		if (flag_x ^ (ax >= 0))
-		{
-			return (360 -(Tiltangle - First_Tiltangle));
-		}
-		else
-		{
-			return (Tiltangle - First_Tiltangle);
-		}
+		return (360 + Tiltangle_return);
 	}
-	else
-	{
-		if (flag_x ^ (ax >= 0))
-		{
-			return (360 -(First_Tiltangle - Tiltangle));
-		}
-		else
-			return (First_Tiltangle - Tiltangle);
-	}
+    else if (Tiltangle_return > 180)
+    {
+        return (360 - Tiltangle_return);
+    }
+    else if (Tiltangle_return < 0)
+    {
+        return -Tiltangle_return;
+    }
+    else
+        return Tiltangle_return;
 
 }
 //报文处理函数
@@ -1497,7 +1454,7 @@ static void message_process(uint8_t *ch)
 		break;
 	}
 }
-
+#if defined (QUEUE_TEST)
 //队列测试代码
 uint8_t test[100];
 extern pstorage_handle_t block_id;
@@ -1537,25 +1494,24 @@ void queue_test(void)
 	pstorage_load(test, &dest_block_id, sizeof(test),0);
 
 }
-
+#endif
 /**@brief  Application main function.
  */
 int main(void)
 {
     // Initialize
-//    uint8_t data;
-	AxesRaw_t Axes_Raw_Data = {0};
-	uint8_t response;
-	float ax,ay,az;
-	UTCTimeStruct time;
-	queue_items_t item;
-	uint8_t data_array[20];
-	uint32_t err_code;
+    AxesRaw_t Axes_Raw_Data = {0};
+    uint8_t response;
+    float ax,ay,az;
+    UTCTimeStruct time;
+    queue_items_t item;
+    uint8_t data_array[20];
+    uint32_t err_code;
     leds_init();
     timers_init();
     app_trace_init();
     ble_stack_init();
-	//flash初始化
+	  //flash初始化
 	queue_init();
 	device_manager_init();
     gap_params_init();
@@ -1567,13 +1523,14 @@ int main(void)
 #endif
     conn_params_init();
     sec_params_init();
-    printf(START_STRING);
-	adc_init();
-	battery_value = adc_start();
+    app_trace_log(START_STRING);
+	battery_init();
+    battery_manager();
+	battery_value = battery_get_value();
 	//gpiote初始化
     buttons_init();
 	//马达驱动初始化
-	pwm_moto_init();
+    alarm_init();
 #if defined (DEBUG_MODE)
 	advertising_start();
 #endif
@@ -1581,7 +1538,9 @@ int main(void)
 //	simple_uart_put(data);
 
 	LIS3DH_Init();
-//	queue_test();
+#if defined (QUEUE_TEST)
+	queue_test();
+#endif
 
     // Enter main loop
     for (;;)
@@ -1654,6 +1613,12 @@ int main(void)
 			queue_sync();
 			g_event_status &= ~EVENT_DATA_SYNC;
 		}
+        if (g_event_status & EVENT_BATTRY_VALUE)
+        {
+            battery_manager();
+            battery_value = battery_get_value();
+            g_event_status &= ~EVENT_BATTRY_VALUE;
+        }
 		//数据发送
 		if (data_send_status == true)
 		{//开始发送数据
@@ -1664,7 +1629,7 @@ int main(void)
 					//发送完成
 					data_send_status = false;
 					//led常亮
-					nrf_gpio_pin_set(CONNECTED_LED_PIN_NO);
+					nrf_gpio_pin_set(LED0);
 					g_event_status |= EVENT_DATA_SENDED;
 					//发送传输完成报文
 					data_array[0] = 0xA5;
@@ -1682,7 +1647,7 @@ int main(void)
 				else
 				{
 					//传输数据是led闪烁
-					nrf_gpio_pin_toggle(CONNECTED_LED_PIN_NO);
+					nrf_gpio_pin_toggle(LED0);
 					data_array[0] = 0xA5;
 					data_array[1] = 0x09;
 					data_array[2] = CMD_SEND_DATA;

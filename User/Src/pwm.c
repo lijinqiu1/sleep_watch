@@ -238,7 +238,7 @@ static void pwm_moto_setpower(uint8_t power)
 }
 void alarm_init(void)
 {
-
+    pwm_moto_init();
 }
 void alarm_start(void)
 {

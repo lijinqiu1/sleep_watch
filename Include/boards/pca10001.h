@@ -21,12 +21,12 @@
 
 #define BUTTON_START   16
 #define BUTTON_0       16
-#define BUTTON_1       17
+#define BUTTON_1       30
 #define BUTTON_STOP    17
 #define BUTTON_PULL    NRF_GPIO_PIN_PULLUP
 
-#define RX_PIN_NUMBER  11  //13
-#define TX_PIN_NUMBER  9
+#define RX_PIN_NUMBER  25  //13
+#define TX_PIN_NUMBER  23
 #define CTS_PIN_NUMBER 10
 #define RTS_PIN_NUMBER 8
 #define HWFC           false
@@ -41,10 +41,10 @@
 #define SPIM0_MISO_PIN      22u     /**< SPI Master In Slave Out GPIO pin number. */
 #define SPIM0_SS_PIN        21u     /**< SPI Slave Select GPIO pin number. */
 
-#define SPIM1_SCK_PIN       15u     /**< SPI clock GPIO pin number. */
-#define SPIM1_MOSI_PIN      12u     /**< SPI Master Out Slave In GPIO pin number. */
-#define SPIM1_MISO_PIN      14u     /**< SPI Master In Slave Out GPIO pin number. */
-#define SPIM1_SS_PIN        13u     /**< SPI Slave Select GPIO pin number. */
+#define SPIM1_SCK_PIN       4u     /**< SPI clock GPIO pin number. */
+#define SPIM1_MOSI_PIN      3u     /**< SPI Master Out Slave In GPIO pin number. */
+#define SPIM1_MISO_PIN      21u     /**< SPI Master In Slave Out GPIO pin number. */
+#define SPIM1_SS_PIN        22u     /**< SPI Slave Select GPIO pin number. */
 
 // serialization APPLICATION board
 
