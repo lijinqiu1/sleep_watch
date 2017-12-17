@@ -13,6 +13,8 @@ void leds_init(void)
     nrf_gpio_cfg_output(LED1);
     nrf_gpio_pin_set(LED0);
     nrf_gpio_pin_set(LED1);
+    nrf_gpio_pin_clear(LED1);
+    nrf_gpio_pin_clear(LED0);
 }
 
 

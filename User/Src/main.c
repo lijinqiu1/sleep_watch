@@ -51,6 +51,7 @@
 #include "adc.h"
 #include "led.h"
 #include "battery.h"
+#include "main.h"
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -128,20 +129,8 @@ static  app_timer_id_t                   m_sec_req_timer_id;
 //按键防抖
 static app_timer_id_t                    m_key_tiemr_id;
 #define SECURITY_REQUEST_DELAY          APP_TIMER_TICKS(1000, APP_TIMER_PRESCALER)  /**< Delay after connection until Security Request is sent, if necessary (ticks). */
-/***********************************事件定义***************************************/
-#define EVENT_KEY_PRESSED               (uint32_t)(0x00000001 << 0)                  /**< 按键事件 >**/
-#define EVENT_MESSAGE_RECEIVED          (uint32_t)(0x00000001 << 1)					 /**< 通信事件 >**/
-#define EVENT_DATA_SENDING				(uint32_t)(0x00000001 << 2)					 /**< 数据发送事件 >**/
-#define EVENT_DATA_SENDED               (uint32_t)(0x00000001 << 3)					 /**< 数据发送完成事件 >**/
-#define EVENT_QUEUE_PUSH				(uint32_t)(0x00000001 << 4)                  /**< 角度存储 >**/
-#define EVENT_ALARM_HAPPEN              (uint32_t)(0x00000001 << 5)                  /**< 报警产生 >**/
-#define EVENT_ADV_START                 (uint32_t)(0x00000001 << 6)                  /**< 停止广播 >**/
-#define EVENT_ADV_STOP                  (uint32_t)(0x00000001 << 7)                  /**< 开始广播 >**/
-#define EVENT_BATTRY_VALUE              (uint32_t)(0x00000001 << 8)                  /**< 获取电池电压 >**/
-#define EVENT_LIS3DH_VALUE              (uint32_t)(0x00000001 << 9)                  /**< 获取3轴数据 >**/
-#define EVENT_TILT_PUSH                 (uint32_t)(0x00000001 <<10)                  /**< 角度值存储 >**/
-#define EVENT_BLE_DISCONNECT            (uint32_t)(0x00000001 <<11)                  /**< 断开蓝牙连接 >**/
-#define EVENT_DATA_SYNC                 (uint32_t)(0x00000001 <<12)                  /**< 同步队列数据 >**/
+
+
 static void period_cycle_process(void * p_context);
 
 static uint32_t g_event_status = 0;        //事件存储变量
@@ -1275,9 +1264,9 @@ static float calculateTilt_B(float ax, float ay, float az)
 	float g = 9.80665;
 	float Tiltangle = 0;
 	temp = ((sqrt(2)/2)*g/10);
-	if (fabs(ax) < temp)
+	if (fabs(ay) < temp)
 	{
-		Tiltangle = asin(fabs(ax));
+		Tiltangle = asin(fabs(ay));
 //		if (Tiltangle < 0) {
 //			Tiltangle = - Tiltangle;
 //		}
@@ -1286,20 +1275,20 @@ static float calculateTilt_B(float ax, float ay, float az)
 	}
 	else
 	{
-		Tiltangle = acos(fabs(ax));
+		Tiltangle = acos(fabs(ay));
 		Tiltangle = Tiltangle/PI*180;
 		Tiltangle = 90-Tiltangle;
 //		app_trace_log("acos Tiltangle:%f\n",Tiltangle);
 	}
-	if((az < 0)&&(ax > 0))
+	if((az < 0)&&(ay > 0))
 	{
 		Tiltangle = 180 - Tiltangle;
 	}
-	else if ((az < 0)&&(ax<0))
+	else if ((az < 0)&&(ay<0))
 	{
 		Tiltangle = 180 + Tiltangle;
 	}
-	else if ((az > 0) && (ax < 0))
+	else if ((az > 0) && (ay < 0))
 	{
 		Tiltangle = 360 - Tiltangle;
 	}

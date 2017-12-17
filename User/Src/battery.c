@@ -5,6 +5,7 @@
 #include "adc.h"
 
 static Battery_Charge_Status_e battery_charge_cur_status = BATTERY_NOT_CHARGE;
+static Battery_Charge_Status_e battery_charge_last_status = BATTERY_NOT_CHARGE;
 static uint16_t battery_value;
 void battery_init(void)
 {
@@ -21,15 +22,28 @@ void battery_manager(void)
         if(nrf_gpio_pin_read(BQ24040_CHG_PIN))
         {//充电中
             battery_charge_cur_status = BATTERY_CHARGING;
+            if (battery_charge_cur_status != battery_charge_last_status)
+            {
+                
+                battery_charge_last_status = battery_charge_cur_status;
+            }
         }
         else
         {//充电完成
             battery_charge_cur_status = BATTERY_CHARGE_COMPLETE;
+            if (battery_charge_cur_status != battery_charge_last_status)
+            {
+                battery_charge_last_status = battery_charge_cur_status;
+            }
         }
     }
     else
     {
         battery_charge_cur_status = BATTERY_NOT_CHARGE;
+        if (battery_charge_cur_status != battery_charge_last_status)
+        {
+            battery_charge_last_status = battery_charge_cur_status;
+        }
     }
 }
 
