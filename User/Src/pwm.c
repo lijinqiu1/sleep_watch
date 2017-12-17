@@ -163,54 +163,55 @@ static void pwm_moto_init(void)
     nrf_gpio_cfg_output(PWM_MOTO_PIN);
 
     nrf_gpio_pin_clear(PWM_MOTO_PIN);
+//    nrf_gpio_pin_set(PWM_MOTO_PIN);
     // Configure GPIOTE channel 0 to toggle the PWM pin state
     // @note Only one GPIOTE task can be connected to an output pin.
-    nrf_gpiote_task_config(1, PWM_MOTO_PIN, \
-                           NRF_GPIOTE_POLARITY_TOGGLE, NRF_GPIOTE_INITIAL_VALUE_LOW);
+	nrf_gpiote_task_config(1, PWM_MOTO_PIN, \
+												 NRF_GPIOTE_POLARITY_TOGGLE, NRF_GPIOTE_INITIAL_VALUE_LOW);
 	//ppi_init
-    // Configure PPI channel 0 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[0] match.
+	// Configure PPI channel 0 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[0] match.
 	sd_ppi_channel_assign(3,&NRF_TIMER1->EVENTS_COMPARE[0],&NRF_GPIOTE->TASKS_OUT[1]);
 
-    // Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[1] match.
+	// Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[1] match.
 	sd_ppi_channel_assign(4,&NRF_TIMER1->EVENTS_COMPARE[1],&NRF_GPIOTE->TASKS_OUT[1]);
 
-    // Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[2] match.
+	// Configure PPI channel 1 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[2] match.
 	sd_ppi_channel_assign(5,&NRF_TIMER1->EVENTS_COMPARE[2],&NRF_GPIOTE->TASKS_OUT[1]);
 
 
-    // Enable PPI channels 0-2.
+	// Enable PPI channels 0-2.
 	sd_ppi_channel_enable_set((PPI_CHEN_CH3_Enabled << PPI_CHEN_CH3_Pos)
-                    | (PPI_CHEN_CH4_Enabled << PPI_CHEN_CH4_Pos)
-                    | (PPI_CHEN_CH5_Enabled << PPI_CHEN_CH5_Pos));
-    //timer2_init
+									| (PPI_CHEN_CH4_Enabled << PPI_CHEN_CH4_Pos)
+									| (PPI_CHEN_CH5_Enabled << PPI_CHEN_CH5_Pos));
+	//timer2_init
 	NRF_TIMER1->MODE      = TIMER_MODE_MODE_Timer;
-    NRF_TIMER1->BITMODE   = TIMER_BITMODE_BITMODE_16Bit << TIMER_BITMODE_BITMODE_Pos;
-    NRF_TIMER1->PRESCALER = TIMER_PRESCALERS;
+	NRF_TIMER1->BITMODE   = TIMER_BITMODE_BITMODE_16Bit << TIMER_BITMODE_BITMODE_Pos;
+	NRF_TIMER1->PRESCALER = TIMER_PRESCALERS;
 
-    // Clears the timer, sets it to 0.
-    NRF_TIMER1->TASKS_CLEAR = 1;
+	// Clears the timer, sets it to 0.
+	NRF_TIMER1->TASKS_CLEAR = 1;
 
-    // Load the initial values to TIMER2 CC registers.
-    NRF_TIMER1->CC[0] = MAX_SAMPLE_LEVELS + 8;
-    NRF_TIMER1->CC[1] = MAX_SAMPLE_LEVELS;
-    // CC2 will be set on the first CC1 interrupt.
-    NRF_TIMER1->CC[2] = 0;
+	// Load the initial values to TIMER2 CC registers.
+	NRF_TIMER1->CC[0] = MAX_SAMPLE_LEVELS + 8;
+	NRF_TIMER1->CC[1] = MAX_SAMPLE_LEVELS;
+	// CC2 will be set on the first CC1 interrupt.
+	NRF_TIMER1->CC[2] = 0;
 
-    // Interrupt setup.
-    NRF_TIMER1->INTENSET = (TIMER_INTENSET_COMPARE1_Enabled << TIMER_INTENSET_COMPARE1_Pos);
-    // Enabling constant latency as indicated by PAN 11 "HFCLK: Base current with HFCLK
-    // running is too high" found at Product Anomaly document found at
-    // https://www.nordicsemi.com/eng/Products/Bluetooth-R-low-energy/nRF51822/#Downloads
-    //
-    // @note This example does not go to low power mode therefore constant latency is not needed.
-    //       However this setting will ensure correct behaviour when routing TIMER events through
+	// Interrupt setup.
+	NRF_TIMER1->INTENSET = (TIMER_INTENSET_COMPARE1_Enabled << TIMER_INTENSET_COMPARE1_Pos);
+	// Enabling constant latency as indicated by PAN 11 "HFCLK: Base current with HFCLK
+	// running is too high" found at Product Anomaly document found at
+	// https://www.nordicsemi.com/eng/Products/Bluetooth-R-low-energy/nRF51822/#Downloads
+	//
+	// @note This example does not go to low power mode therefore constant latency is not needed.
+	//       However this setting will ensure correct behaviour when routing TIMER events through
 
 
-    // Enable interrupt on Timer 2.
-    NVIC_EnableIRQ(TIMER1_IRQn);
+	// Enable interrupt on Timer 2.
+	NVIC_EnableIRQ(TIMER1_IRQn);
 
-    // Start the timer.
-//    NRF_TIMER1->TASKS_START = 1;
+	// Start the timer.
+//	NRF_TIMER1->TASKS_START = 1;
 }
 
 static void pwm_moto_deinit(void)

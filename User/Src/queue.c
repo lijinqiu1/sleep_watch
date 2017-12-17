@@ -151,7 +151,29 @@ uint8_t queue_pop(queue_items_t *item)
 	pstorage_size_t offset;
 	pstorage_size_t block_num;
 	pstorage_handle_t dest_block_id;
-
+#if defined(DEBUG_APP)
+	uint16_t angle[60] = {
+			 00, 10, 20, 30, 40, 50, 60, 70, 80, 90,
+			100,140,180,140,100, 50, 00, 50,100,140,
+			180,240,280,320,360, 50, 40, 50, 40, 50,
+		     40, 50, 40, 50, 40, 50, 40, 50, 40, 50,
+		     40, 50, 40, 50, 40, 50, 40, 50, 40, 50,
+		     40, 80, 90, 80, 90, 80, 90, 80, 90, 80,		
+			};
+	if (queue_entries.entries == 0)
+	{
+		queue_entries.entries = 60;
+		return 1;
+	}
+	queue_entries.entries --;
+	item->year = 0x11;
+	item->mon = 0x01;
+	item->day = 0x01;
+	item->hour = 0x01;
+	item->min = 59 - queue_entries.entries;
+	item->second = 0x00;
+	item->angle = angle[59 - queue_entries.entries] * 100;
+#else
 	while (queue_status != QUEUE_STATUS_UPDATE_READY);
 
 	if (queue_entries.entries == 0)
@@ -192,6 +214,7 @@ RETRY:
 	queue_status = QUEUE_STATUS_UPDATING;
 	while(queue_status == QUEUE_STATUS_UPDATING);
 */
+#endif
 	return 0;
 }
 

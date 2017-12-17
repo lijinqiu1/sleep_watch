@@ -56,7 +56,7 @@
 
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
 
-#define DEVICE_NAME                     "Watch"                                     /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "test"                                     /**< Name of device. Will be included in the advertising data. */
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
@@ -100,7 +100,7 @@
 //gpiote
 #define MAX_USERS						1
 //蓝牙拦截配对密码
-#define PAIR_PASS_WORD                  "123456"
+#define PAIR_PASS_WORD                  "111111"
 
 #if defined (ADV_GERANL)
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
@@ -1124,7 +1124,7 @@ static void period_cycle_process(void * p_context)
 					g_event_status|= EVENT_DATA_SYNC;
 				}
 			}
-			else if(key_timer < 6)
+			else
 			{
 				//长按
 				if (adv_status == false)
@@ -1388,6 +1388,7 @@ static void message_process(uint8_t *ch)
 		break;
 	case CMD_SET_ALARM:
 		//设置干涉条件
+		//干涉条件有6个
 		system_params.angle = ch[3];
 		system_params.time = ch[4];
 		//发送响应报文
@@ -1407,7 +1408,7 @@ static void message_process(uint8_t *ch)
 		{
 			//设备绑定
 			system_params.device_bonded = 0x0001;
-			memcpy((char *)system_params.mac_add,&ch[4],6);
+			memcpy((char *)system_params.mac_add,&ch[4],11);
 			system_params_save(&system_params);
 			//发送响应报文
 			data_array[0] = 0xA5;
@@ -1507,12 +1508,12 @@ int main(void)
     queue_items_t item;
     uint8_t data_array[20];
     uint32_t err_code;
-    leds_init();
     timers_init();
     app_trace_init();
     ble_stack_init();
 	  //flash初始化
 	queue_init();
+	
 	device_manager_init();
     gap_params_init();
     services_init();
@@ -1524,6 +1525,8 @@ int main(void)
     conn_params_init();
     sec_params_init();
     app_trace_log(START_STRING);
+#if !defined (DEBUG_APP)
+    leds_init();
 	battery_init();
     battery_manager();
 	battery_value = battery_get_value();
@@ -1531,13 +1534,16 @@ int main(void)
     buttons_init();
 	//马达驱动初始化
     alarm_init();
+	LIS3DH_Init();
+#else
+	queue_pop(&item);
+#endif
+//    alarm_start();
 #if defined (DEBUG_MODE)
 	advertising_start();
 #endif
 //	LIS3DH_GetWHO_AM_I(&data);
 //	simple_uart_put(data);
-
-	LIS3DH_Init();
 #if defined (QUEUE_TEST)
 	queue_test();
 #endif
@@ -1603,8 +1609,10 @@ int main(void)
 		}
 		if (g_event_status & EVENT_BLE_DISCONNECT)
 		{
+			#if defined(DEBUG_APP)
 			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
 			APP_ERROR_CHECK(err_code);
+			#endif
 			app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
 			g_event_status &= ~EVENT_BLE_DISCONNECT;
 		}
