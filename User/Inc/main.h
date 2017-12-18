@@ -20,5 +20,8 @@
 #define EVENT_POWER_CHARGING            (uint32_t)(0x00000001 <<14)                  /**< 电池充电 >**/
 #define EVENT_POWER_CHARGE_COMPLETE     (uint32_t)(0x00000001 <<15)                  /**< 电池充电完成 >**/
 #define EVENT_DATA_FULL                 (uint32_t)(0x00000001 <<16)                  /**< 存储队列满 >**/
+#define EVENT_BLE_CONNECTED             (uint32_t)(0x00000001 <<17)                  /**< 蓝牙连接 >**/
+#define EVENT_BEGIN_WORK                (uint32_t)(0x00000001 <<18)                  /**< 开始工作 >**/
+#define EVENT_END_WORK                  (uint32_t)(0x00000001 <<19)                  /**< 停止工作 >**/
 #endif
 

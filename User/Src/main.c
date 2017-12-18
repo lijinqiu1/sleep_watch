@@ -283,7 +283,9 @@ static void gap_params_init(void)
     uint32_t                err_code;
     ble_gap_conn_params_t   gap_conn_params;
     ble_gap_conn_sec_mode_t sec_mode;
+#if defined(ADV_WHITELIST) || defined(ADV_BOND)
 	ble_opt_t      static_options;
+#endif
 
     BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
 
@@ -1069,7 +1071,6 @@ static void period_cycle_process(void * p_context)
 	uint8_t key_status;             //按键状态
 	static uint16_t angle_timer = 0;	//角度采样频率
 	static uint16_t data_send_completed = 0; //用于传输数据结束后关闭蓝牙连接
-	static uint16_t alarm_timer_cont = 0; //当角度大于干涉角度时开始计时，超时后报警
 	static uint16_t battery_timer = 0; //电池电量
 	//模拟日历
 	TimeSeconds ++;
@@ -1104,13 +1105,15 @@ static void period_cycle_process(void * p_context)
 					work_status = true;
 					//初始化角度值
 					tilt_init_flag = true;
+                    g_event_status |= EVENT_BEGIN_WORK;
 				}
 				else
 				{
 					// stop work
 					work_status = false;
 					//同步队列信息
-					g_event_status|= EVENT_DATA_SYNC;
+					g_event_status |= EVENT_DATA_SYNC;
+                    g_event_status |= EVENT_END_WORK;
 				}
 			}
 			else
@@ -1165,6 +1168,7 @@ static void period_cycle_process(void * p_context)
 
 //*****************倾角计算**************************
 #define PI 3.1415926
+#if 0
 //计算与水平面夹角，结果范围0~180
 static float calculateTilt_A(float ax, float ay, float az)
 {
@@ -1245,7 +1249,7 @@ static float calculateTilt_run_A(float ax, float ay, float az)
 	}
 
 }
-
+#endif
 static float calculateTilt_B(float ax, float ay, float az)
 {
 	/*
@@ -1364,7 +1368,7 @@ static void message_process(uint8_t *ch)
 		break;
 	case CMD_REQUEST_DATA:
 		//开始上传数据
-		data_send_status = true;
+		g_event_status |= EVENT_DATA_SENDING;
 		break;
 	case CMD_SET_ALARM:
 		//设置干涉条件
@@ -1531,6 +1535,8 @@ int main(void)
     // Enter main loop
     for (;;)
     {
+        //led 管理
+        leds_process();
 		if (g_event_status & EVENT_LIS3DH_VALUE)
 		{
 			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
@@ -1564,22 +1570,49 @@ int main(void)
 			}
 			g_event_status &= ~EVENT_LIS3DH_VALUE;
 		}
+        
+        if (g_event_status & EVENT_BEGIN_WORK)
+        {
+            leds_process_init(LED_WORK_BEGIN);
+            if (adv_status == true)
+            {
+                g_event_status |= EVENT_ADV_STOP;
+            }
+            g_event_status &= ~(EVENT_BEGIN_WORK);
+        }
+        
+        if (g_event_status & EVENT_END_WORK)
+        {
+            leds_process_init(LED_WORK_END);
+            g_event_status &= ~(EVENT_END_WORK);
+        }
+        
+        if (g_event_status & EVENT_DATA_SENDING)
+        {
+    		data_send_status = true;
+            leds_process_init(LED_WORK_BLE_DATA_TRAING);
+            g_event_status &= ~(EVENT_DATA_SENDING);
+        }
+        
 		if (g_event_status & EVENT_MESSAGE_RECEIVED)
 		{//有数据接收
 			message_process(rec_data_buffer);
 			g_event_status &= ~(EVENT_MESSAGE_RECEIVED);
 		}
+        
 		if (g_event_status & EVENT_BATTRY_VALUE)
 		{
 			battery_value = adc_start();
 			g_event_status &= ~(EVENT_BATTRY_VALUE);
 		}
+        
 		if (g_event_status & EVENT_ADV_START)
 		{
 			advertising_start();
 			adv_status = true;
 			g_event_status &= ~(EVENT_ADV_START);
 		}
+        
 		if (g_event_status & EVENT_ADV_STOP)
 		{
 			err_code = sd_ble_gap_adv_stop();
@@ -1587,6 +1620,7 @@ int main(void)
 			adv_status = false;
 			g_event_status &= ~(EVENT_ADV_STOP);
 		}
+        
 		if (g_event_status & EVENT_BLE_SHUT_CONNECT)
 		{
 			#if defined(DEBUG_APP)
@@ -1596,17 +1630,20 @@ int main(void)
 			app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
 			g_event_status &= ~EVENT_BLE_SHUT_CONNECT;
 		}
+        
 		if (g_event_status & EVENT_DATA_SYNC)
 		{
 			queue_sync();
 			g_event_status &= ~EVENT_DATA_SYNC;
 		}
+        
         if (g_event_status & EVENT_BATTRY_VALUE)
         {
             battery_manager();
             battery_value = battery_get_value();
             g_event_status &= ~EVENT_BATTRY_VALUE;
         }
+        
 		//数据发送
 		if (data_send_status == true)
 		{//开始发送数据
@@ -1616,8 +1653,7 @@ int main(void)
 				{
 					//发送完成
 					data_send_status = false;
-					//led常亮
-					nrf_gpio_pin_set(LED0);
+                    leds_process_init(LED_IDLE);
 					g_event_status |= EVENT_DATA_SENDED;
 					//发送传输完成报文
 					data_array[0] = 0xA5;
@@ -1634,8 +1670,6 @@ int main(void)
 				}
 				else
 				{
-					//传输数据是led闪烁
-					nrf_gpio_pin_toggle(LED0);
 					data_array[0] = 0xA5;
 					data_array[1] = 0x09;
 					data_array[2] = CMD_SEND_DATA;

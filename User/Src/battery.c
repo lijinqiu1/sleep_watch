@@ -9,8 +9,8 @@ static Battery_Charge_Status_e battery_charge_last_status = BATTERY_NOT_CHARGE;
 static uint16_t battery_value;
 void battery_init(void)
 {
-    nrf_gpio_cfg_input(BQ24040_CHG_PIN, GPIO_PIN_CNF_PULL_Pullup);
-    nrf_gpio_cfg_input(BQ24040_PG_PIN, GPIO_PIN_CNF_PULL_Pullup);
+    nrf_gpio_cfg_input(BQ24040_CHG_PIN, NRF_GPIO_PIN_PULLUP);
+    nrf_gpio_cfg_input(BQ24040_PG_PIN, NRF_GPIO_PIN_PULLUP);
     adc_init();
 }
 

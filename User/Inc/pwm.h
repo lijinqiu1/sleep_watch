@@ -27,14 +27,10 @@ typedef enum pwm_moto_level
 	MOTO_LEVEL_AUTO,
 }PwmMotoLevel_t;
 
-typedef enum pwm_status
-{
-	PWM_STATUS_READY,
-	PWM_STATUS_MOTO,
-	PWM_STATUS_LED,
-}PwmStatusEN_t;
 
 
 void alarm_init(void);
+void pwm_led_start(uint32_t led);
+void pwm_led_stop(void);
 
 #endif

@@ -7,7 +7,7 @@
 #include "pwm.h"
 #include "queue.h"
 
-static PwmStatusEN_t pwm_status = PWM_STATUS_READY;
+static uint8_t pwm_led_status = 0;
 static uint8_t pwm_moto_strong = 0;
 static uint8_t moto_time = 0; //记录震动时长
 static uint8_t moto_count = 0; //记录震动次数
@@ -85,21 +85,21 @@ void TIMER1_IRQHandler(void)
     }
 }
 
-void pwm_led_start(void)
+void pwm_led_start(uint32_t led)
 {
-	if (pwm_status == PWM_STATUS_READY)
-	{
-		//判断当前是否正在工作
-
-	}
+    if (pwm_led_status == 1)
+    {
+        return ;
+    }
+    pwm_led_status = 1;
 	//gpiote_init
 	// Connect GPIO input buffers and configure PWM_OUTPUT_PIN_NUMBER as an output.
-    nrf_gpio_cfg_output(PWM_LED_PIN);
+    nrf_gpio_cfg_output(led);
 
-    nrf_gpio_pin_clear(PWM_LED_PIN);
+    nrf_gpio_pin_clear(led);
     // Configure GPIOTE channel 0 to toggle the PWM pin state
     // @note Only one GPIOTE task can be connected to an output pin.
-    nrf_gpiote_task_config(0, PWM_LED_PIN, \
+    nrf_gpiote_task_config(0, led, \
                            NRF_GPIOTE_POLARITY_TOGGLE, NRF_GPIOTE_INITIAL_VALUE_LOW);
 	//ppi_init
     // Configure PPI channel 0 to toggle PWM_OUTPUT_PIN on every TIMER2 COMPARE[0] match.
@@ -149,6 +149,11 @@ void pwm_led_start(void)
 
 void pwm_led_stop(void)
 {
+    if (pwm_led_status == 0)
+    {
+        return;
+    }
+    pwm_led_status = 0;
 	NRF_TIMER2->TASKS_START = 0;
 	nrf_gpiote_unconfig(0);
 	sd_ppi_channel_enable_clr((PPI_CHEN_CH0_Enabled << PPI_CHEN_CH0_Pos)
