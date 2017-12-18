@@ -1132,17 +1132,8 @@ static void period_cycle_process(void * p_context)
 		if (angle_timer++ >= (ANGLE_SMAPLE_RATE-1))
 		{
 			angle_timer = 0;
-			if((Tilt > system_params.angle)&&(alarm_timer_cont++ >= (system_params.time/ANGLE_SMAPLE_RATE - 1)))
-			{//开始报警
-				alarm_status = true;
-			}
 			//存储数据
 			g_event_status |= EVENT_TILT_PUSH;
-		}
-		if (Tilt<(system_params.angle - 15))
-		{//如果报警后身体翻转超过15°，取消报警
-			alarm_status = false;
-			alarm_timer_cont = 0;
 		}
 		g_event_status |= EVENT_LIS3DH_VALUE;
 	}
@@ -1154,7 +1145,7 @@ static void period_cycle_process(void * p_context)
 		data_send_completed = 0;
 		if (ble_connect_status == true)
 		{
-			g_event_status |= EVENT_BLE_DISCONNECT;
+			g_event_status |= EVENT_BLE_SHUT_CONNECT;
 		}
 	}
 
@@ -1378,8 +1369,8 @@ static void message_process(uint8_t *ch)
 	case CMD_SET_ALARM:
 		//设置干涉条件
 		//干涉条件有6个
-		system_params.angle = ch[3];
-		system_params.time = ch[4];
+		system_params.time[0] = ch[4];
+		memcpy(system_params.time,&ch[4],0x06);
 		//发送响应报文
 		data_array[0] = 0xA5;
 		data_array[1] = 0x01;
@@ -1414,7 +1405,7 @@ static void message_process(uint8_t *ch)
 		{
 			//设备解绑
 			system_params.device_bonded = 0xFFFF;
-			memset((char *)system_params.mac_add,0xFF,6);
+			memset((char *)system_params.mac_add,0xFF,11);
 			system_params_save(&system_params);
 			//发送响应报文
 			data_array[0] = 0xA5;
@@ -1502,7 +1493,7 @@ int main(void)
     ble_stack_init();
 	  //flash初始化
 	queue_init();
-	
+
 	device_manager_init();
     gap_params_init();
     services_init();
@@ -1596,14 +1587,14 @@ int main(void)
 			adv_status = false;
 			g_event_status &= ~(EVENT_ADV_STOP);
 		}
-		if (g_event_status & EVENT_BLE_DISCONNECT)
+		if (g_event_status & EVENT_BLE_SHUT_CONNECT)
 		{
 			#if defined(DEBUG_APP)
 			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
 			APP_ERROR_CHECK(err_code);
 			#endif
 			app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
-			g_event_status &= ~EVENT_BLE_DISCONNECT;
+			g_event_status &= ~EVENT_BLE_SHUT_CONNECT;
 		}
 		if (g_event_status & EVENT_DATA_SYNC)
 		{

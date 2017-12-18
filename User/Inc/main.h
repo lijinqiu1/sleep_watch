@@ -13,11 +13,12 @@
 #define EVENT_BATTRY_VALUE              (uint32_t)(0x00000001 << 8)                  /**< 获取电池电压 >**/
 #define EVENT_LIS3DH_VALUE              (uint32_t)(0x00000001 << 9)                  /**< 获取3轴数据 >**/
 #define EVENT_TILT_PUSH                 (uint32_t)(0x00000001 <<10)                  /**< 角度值存储 >**/
-#define EVENT_BLE_DISCONNECT            (uint32_t)(0x00000001 <<11)                  /**< 断开蓝牙连接 >**/
+#define EVENT_BLE_SHUT_CONNECT          (uint32_t)(0x00000001 <<11)                  /**< 断开蓝牙连接 >**/
+
 #define EVENT_DATA_SYNC                 (uint32_t)(0x00000001 <<12)                  /**< 同步队列数据 >**/
 #define EVENT_POWER_LOW                 (uint32_t)(0x00000001 <<13)                  /**< 电池电压低 >**/
-#define EVENT_POWER_CHARGING            (uint32_t)(0x00000001 <<14)                  /**< 电池充电 >**/ 
+#define EVENT_POWER_CHARGING            (uint32_t)(0x00000001 <<14)                  /**< 电池充电 >**/
 #define EVENT_POWER_CHARGE_COMPLETE     (uint32_t)(0x00000001 <<15)                  /**< 电池充电完成 >**/
-
+#define EVENT_DATA_FULL                 (uint32_t)(0x00000001 <<16)                  /**< 存储队列满 >**/
 #endif
 

@@ -9,6 +9,7 @@ typedef enum BATTERY_CHARGE_STATUS
     BATTERY_NOT_CHARGE,
     BATTERY_CHARGING,
     BATTERY_CHARGE_COMPLETE,
+    BATTERY_VALUE_LOW,
 }Battery_Charge_Status_e;
 
 void battery_init(void);

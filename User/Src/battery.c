@@ -24,7 +24,6 @@ void battery_manager(void)
             battery_charge_cur_status = BATTERY_CHARGING;
             if (battery_charge_cur_status != battery_charge_last_status)
             {
-                
                 battery_charge_last_status = battery_charge_cur_status;
             }
         }
@@ -39,11 +38,14 @@ void battery_manager(void)
     }
     else
     {
-        battery_charge_cur_status = BATTERY_NOT_CHARGE;
-        if (battery_charge_cur_status != battery_charge_last_status)
-        {
-            battery_charge_last_status = battery_charge_cur_status;
-        }
+		if (battery_value < 930)
+		{
+			battery_charge_cur_status = BATTERY_VALUE_LOW;
+		}
+		else
+		{
+        	battery_charge_cur_status = BATTERY_NOT_CHARGE;
+		}
     }
 }
 

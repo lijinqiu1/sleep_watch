@@ -73,13 +73,9 @@ void queue_init(void)
 	//第一次开机flash里面没有存储数据
 		memset((char*)&queue_entries,0x00,sizeof(queue_entries));
 	}
-	if (system_params.angle == 0xFFFF)
+	if ( system_params.time[0] == 0xFFFF)
 	{
-		system_params.angle =   DEFAULT_ALARM_ANGLE;
-	}
-	if ( system_params.time == 0xFFFF)
-	{
-		system_params.time = DEFAULT_ALARM_TIME;
+		memset(system_params.time, 0x00, 12);
 	}
 	if ( system_params.moto_strong == 0xFFFF )
 	{
@@ -158,7 +154,7 @@ uint8_t queue_pop(queue_items_t *item)
 			180,240,280,320,360, 50, 40, 50, 40, 50,
 		     40, 50, 40, 50, 40, 50, 40, 50, 40, 50,
 		     40, 50, 40, 50, 40, 50, 40, 50, 40, 50,
-		     40, 80, 90, 80, 90, 80, 90, 80, 90, 80,		
+		     40, 80, 90, 80, 90, 80, 90, 80, 90, 80,
 			};
 	if (queue_entries.entries == 0)
 	{
