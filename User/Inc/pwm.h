@@ -5,11 +5,11 @@
 #define MAX_SAMPLE_LEVELS (256UL)  /**< Maximum number of sample levels. */
 #define TIMER_PRESCALERS   6U       /**< Prescaler setting for timer. */
 
-#define MOTO_STRONG_ZERO     0
+#define MOTO_STRONG_ZERO     10
 #define MOTO_STRONG_ONE      64
 #define MOTO_STRONG_TWO      128
 #define MOTO_STRONG_THREE    192
-#define MOTO_STRONG_FULL     256
+#define MOTO_STRONG_FULL     250
 
 #define PWM_LED_PIN          12
 #define PWM_MOTO_PIN         29
@@ -30,6 +30,9 @@ typedef enum pwm_moto_level
 
 
 void alarm_init(void);
+void alarm_process(void);
+void alarm_case(void);
+
 void pwm_led_start(uint32_t led);
 void pwm_led_stop(void);
 

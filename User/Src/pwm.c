@@ -9,8 +9,12 @@
 
 static uint8_t pwm_led_status = 0;
 static uint8_t pwm_moto_strong = 0;
+static uint8_t moto_strong[4] = {MOTO_LEVEL_25,MOTO_LEVEL_50,
+									MOTO_LEVEL_75,MOTO_LEVEL_100};
+static uint8_t moto_strong_index = 0;
 static uint8_t moto_time = 0; //记录震动时长
 static uint8_t moto_count = 0; //记录震动次数
+
 /** @brief Function for handling timer 2 peripheral interrupts.
  */
 void TIMER2_IRQHandler(void)
@@ -226,56 +230,67 @@ static void pwm_moto_deinit(void)
 	sd_ppi_channel_enable_clr((PPI_CHEN_CH3_Enabled << PPI_CHEN_CH3_Pos)
                     | (PPI_CHEN_CH4_Enabled << PPI_CHEN_CH4_Pos)
                     | (PPI_CHEN_CH5_Enabled << PPI_CHEN_CH5_Pos));
+	nrf_gpio_pin_clear(PWM_MOTO_PIN);
 }
 
-static void pwm_moto_start(void)
-{
-	NRF_TIMER1->TASKS_START = 1;
-}
+//static void pwm_moto_start(void)
+//{
+//	NRF_TIMER1->TASKS_START = 1;
+//}
 
-static void pwm_moto_stop(void)
-{
-	NRF_TIMER1->TASKS_START = 0;
-}
-//设置马达强度
-static void pwm_moto_setpower(uint8_t power)
-{
-	pwm_moto_strong = power;
-}
+//static void pwm_moto_stop(void)
+//{
+//	NRF_TIMER1->TASKS_START = 0;
+//}
+////设置马达强度
+//static void pwm_moto_setpower(uint8_t power)
+//{
+//	pwm_moto_strong = power;
+//}
 void alarm_init(void)
 {
-    pwm_moto_init();
+	moto_time = 0;
+	moto_count = 0;
+	moto_strong_index = 0;
 }
-void alarm_start(void)
+void alarm_process(void)
 {
-	if(system_params.moto_strong == MOTO_LEVEL_AUTO)
+	if (moto_count < 10)
 	{
-
-	}
-	else
-	{
-		switch (moto_time)
+		switch(moto_time)
 		{
 		case 0:
-			pwm_moto_start();
-			moto_time ++;
+			if (system_params.moto_strong == MOTO_LEVEL_AUTO)
+			{
+				pwm_moto_strong = moto_strong[moto_strong_index];
+				if (moto_count < 4)
+				{
+					moto_strong_index++;
+				}
+			}
+			else
+			{
+				pwm_moto_strong = system_params.moto_strong;
+			}
+    		pwm_moto_init();
+			moto_time++;
 			break;
 		case 3:
-			pwm_moto_stop();
-			moto_time ++;
+			pwm_moto_deinit();
+			moto_time++;
 			break;
-		case 9:
+		case 8:
 			moto_time = 0;
 			moto_count++;
 			break;
 		default:
-			moto_time ++;
+			moto_time++;
 			break;
 		}
 	}
 }
 
-void alarm_stop(void)
+void alarm_case(void)
 {
-
+	pwm_moto_deinit();
 }

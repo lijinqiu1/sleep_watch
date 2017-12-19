@@ -3,7 +3,7 @@
 #include "nrf_gpio.h"
 #include "battery.h"
 #include "adc.h"
-
+#include "led.h"
 static Battery_Charge_Status_e battery_charge_cur_status = BATTERY_NOT_CHARGE;
 static Battery_Charge_Status_e battery_charge_last_status = BATTERY_NOT_CHARGE;
 static uint16_t battery_value;
@@ -25,6 +25,7 @@ void battery_manager(void)
             if (battery_charge_cur_status != battery_charge_last_status)
             {
                 battery_charge_last_status = battery_charge_cur_status;
+				leds_process_init(LED_WORK_POWER_CHARGING);
             }
         }
         else
@@ -33,6 +34,7 @@ void battery_manager(void)
             if (battery_charge_cur_status != battery_charge_last_status)
             {
                 battery_charge_last_status = battery_charge_cur_status;
+				leds_process_init(LED_WORK_POWER_CHARGE_COMPLETE);
             }
         }
     }
@@ -41,10 +43,12 @@ void battery_manager(void)
 		if (battery_value < 930)
 		{
 			battery_charge_cur_status = BATTERY_VALUE_LOW;
+			leds_process_init(LED_WORK_POWER_LOW);
 		}
 		else
 		{
         	battery_charge_cur_status = BATTERY_NOT_CHARGE;
+			leds_process_init(LED_IDLE);
 		}
     }
 }

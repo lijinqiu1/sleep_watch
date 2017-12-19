@@ -97,7 +97,7 @@
 
 #define LIS3DH_SMAPLE_RATE				1											/**< 三轴加速度采样频率 单位:秒 >**/
 
-#define ANGLE_SMAPLE_RATE				60											/**< 角度数据采样频率 单位:秒 >**/
+#define ANGLE_SMAPLE_RATE				180											/**< 角度数据采样频率 单位:秒 >**/
 //gpiote
 #define MAX_USERS						1
 //蓝牙拦截配对密码
@@ -133,17 +133,18 @@ static app_timer_id_t                    m_key_tiemr_id;
 
 static void period_cycle_process(void * p_context);
 
-static uint32_t g_event_status = 0;        //事件存储变量
-static bool key_pressed = false;         //记录按键事件
-static bool adv_status = false;          //广播状态
-static bool work_status = false;         //设备工作状态
-static bool data_send_status = false;    //发送数据
-static bool ble_connect_status = false;  //蓝牙连接状态
-static bool tilt_init_flag = false;      //角度值初始化
-static bool alarm_status = false;        //报警状态
-static float Tilt;                       //当前倾角变化值
-static uint8_t rec_data_buffer[20];      //缓存接收到的数据
-static uint16_t battery_value;           //电池电量
+static uint32_t g_event_status = 0;                                             //事件存储变量
+static bool g_status_key_pressed = false;                                       //记录按键事件
+static bool g_status_adv = false;                                               //广播状态
+static bool g_status_work = false;                                              //设备工作状态
+static bool g_status_data_send = false;                                         //发送数据
+static bool g_status_ble_connect = false;                                       //蓝牙连接状态
+static bool g_status_alarm_status = false;                                      //报警状态
+static bool g_status_bond_info_received = false;                                //接收到绑定信息
+static bool g_status_tilt_init_flag = false;                                             //角度值初始化
+static float g_cur_Tilt;                                                              //当前倾角变化值
+static uint8_t rec_data_buffer[20];                                             //缓存接收到的数据
+static uint16_t battery_value;                                                  //电池电量
 
 typedef enum
 {
@@ -526,6 +527,7 @@ static void advertising_start(void)
 
 	if ((whitelist.addr_count != 0) || (whitelist.irk_count != 0))
 	{
+#if 0
 		if (system_params.device_bonded == 0xFFFF)
 		{
 			err_code = dm_device_delete_all(&m_app_handle);
@@ -538,6 +540,8 @@ static void advertising_start(void)
 			adv_params.p_whitelist = &whitelist;
 			advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
 		}
+#endif
+		advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
 	}
 
 	adv_params.interval = APP_ADV_INTERVAL_FAST;
@@ -747,17 +751,16 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
     switch (p_ble_evt->header.evt_id)
     {
         case BLE_GAP_EVT_CONNECTED:
-			adv_status = false;
-			ble_connect_status = true;
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 #if defined (ADV_WHITELIST)
 			m_advertising_mode = BLE_NO_ADV;
 #endif
+			g_event_status |= EVENT_BLE_CONNECTED;
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
-			ble_connect_status = false;
+			g_event_status |= EVENT_BLE_DISCONNECTED;
 #if defined (ADV_WHITELIST)
 			m_advertising_mode = BLE_DIRECTED_ADV;
             m_direct_adv_cnt   = APP_DIRECTED_ADV_TIMEOUT;
@@ -934,10 +937,10 @@ static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event
 {
 	if (event_pins_high_to_low & (uint32_t)(1<<BUTTON_1))
 	{
-		if (data_send_status == false) {
+		if (g_status_data_send == false) {
 			//数据传输功能时按键无效
 			//button 1 pressed
-			key_pressed = true;
+			g_status_key_pressed = true;
 			//app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(2000,APP_TIMER_PRESCALER),NULL);
 		}
 	}
@@ -1054,12 +1057,95 @@ static void power_manage(void)
 //    /**@snippet [Handling the data received over UART] */
 //}
 
-/****************ADC**********************************/
 
-/***********************************报警管理***********************************/
-void alarm_manage(void)
+/***********************************睡眠姿态管理***********************************/
+void sleep_manage(void)
 {
-
+	static uint8_t last_sleep_post = 0;
+	static uint8_t cur_sleep_post = 0;
+	static uint32_t cur_timeseconds = 0;
+	static float cur_Tilt = 0; //记录报警时刻的角度值
+	if(g_status_tilt_init_flag == true)
+	{
+		if ((ALARM_SLEEP_POSE_ONE_BEGIN <= g_cur_Tilt)&&
+			(g_cur_Tilt <= ALARM_SLEEP_POSE_ONE_END))
+		{
+			last_sleep_post = cur_sleep_post = ALARM_SLEEP_POSE_ONE;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_TWO_END)
+		{
+			last_sleep_post = cur_sleep_post = ALARM_SLEEP_POSE_TWO;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_THREE_END)
+		{
+			last_sleep_post = cur_sleep_post = ALARM_SLEEP_POSE_THREE;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_FOUR_END)
+		{
+			last_sleep_post = cur_sleep_post = ALARM_SLEEP_POSE_FOUR;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_FIVE_END)
+		{
+			last_sleep_post = cur_sleep_post = ALARM_SLEEP_POSE_FIVE;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_SIX_END)
+		{
+			last_sleep_post = cur_sleep_post = ALARM_SLEEP_POSE_SIX;
+		}
+		cur_timeseconds = TimeSeconds;
+	}
+	else
+	{
+		if ((ALARM_SLEEP_POSE_ONE_BEGIN <= g_cur_Tilt)&&
+			(g_cur_Tilt <= ALARM_SLEEP_POSE_ONE_END))
+		{
+			cur_sleep_post = ALARM_SLEEP_POSE_ONE;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_TWO_END)
+		{
+			cur_sleep_post = ALARM_SLEEP_POSE_TWO;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_THREE_END)
+		{
+			cur_sleep_post = ALARM_SLEEP_POSE_THREE;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_FOUR_END)
+		{
+			cur_sleep_post = ALARM_SLEEP_POSE_FOUR;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_FIVE_END)
+		{
+			cur_sleep_post = ALARM_SLEEP_POSE_FIVE;
+		}
+		else if (g_cur_Tilt <= ALARM_SLEEP_POSE_SIX_END)
+		{
+			cur_sleep_post = ALARM_SLEEP_POSE_SIX;
+		}
+		if ((last_sleep_post == cur_sleep_post) &&
+			((TimeSeconds - cur_timeseconds ) >= (system_params.time[cur_sleep_post] * 60)))
+		{
+			if (g_status_alarm_status == false)
+			{
+				cur_Tilt = g_cur_Tilt;
+				g_status_alarm_status = true;
+				alarm_init();
+			}
+			else if ((g_status_alarm_status == true)&&
+				(fabs(cur_Tilt - g_cur_Tilt) > 15.00))
+			{//角度变化超过5度，解除报警
+				cur_Tilt = g_cur_Tilt;
+				g_status_alarm_status = false;
+				cur_timeseconds = TimeSeconds;
+				alarm_case();
+			}
+		}
+		else if(last_sleep_post != cur_sleep_post)
+		{//睡姿变换报警取消
+			g_status_alarm_status = false;
+			last_sleep_post = cur_sleep_post;
+			cur_timeseconds = TimeSeconds;
+		}
+	}
 }
 
 /*******************************周期事件处理函数*******************************/
@@ -1072,64 +1158,45 @@ static void period_cycle_process(void * p_context)
 	static uint16_t angle_timer = 0;	//角度采样频率
 	static uint16_t data_send_completed = 0; //用于传输数据结束后关闭蓝牙连接
 	static uint16_t battery_timer = 0; //电池电量
+	static uint8_t one_shot_timer = 0;
 	//模拟日历
 	TimeSeconds ++;
 
 
 	//按键处理
-	if (key_pressed == 1)
+	if (g_status_key_pressed == 1)
 	{
 		key_status = nrf_gpio_pin_read(BUTTON_1);
 		if (key_status == 0)
 		{
 			key_timer ++;
+
 			if(key_timer > 10)
-			{//长按超过10s进入在线升级模式
+			{//长按超过10s进如恢复出厂设置
 				// On assert, the system can only recover with a reset.
-				NVIC_SystemReset();
+				//NVIC_SystemReset();
+
 			}
 		}
 		else
 		{
-			key_pressed = 0;
+			g_status_key_pressed = 0;
 			if(key_timer < 2)
 			{
 				//短按
-				if (adv_status == true)
-				{
-					g_event_status |= EVENT_ADV_STOP;
-				}
-				if (work_status == false)
-				{
-					// begin to work
-					work_status = true;
-					//初始化角度值
-					tilt_init_flag = true;
-                    g_event_status |= EVENT_BEGIN_WORK;
-				}
-				else
-				{
-					// stop work
-					work_status = false;
-					//同步队列信息
-					g_event_status |= EVENT_DATA_SYNC;
-                    g_event_status |= EVENT_END_WORK;
-				}
+				g_event_status |= EVENT_KEY_PRESS_SHOT;
 			}
 			else
 			{
 				//长按
-				if (adv_status == false)
-				{
-					g_event_status |= EVENT_ADV_START;
-				}
+				g_event_status |= EVENT_KEY_PRESS_LONG;
 			}
 			key_timer = 0;
 		}
 	}
 
 
-	if ((work_status == true)&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE))
+	if ((g_status_work == true)&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE))
 	{//使用三轴加速度采样
 		lis3dh_timer = 0;
 		if (angle_timer++ >= (ANGLE_SMAPLE_RATE-1))
@@ -1141,14 +1208,14 @@ static void period_cycle_process(void * p_context)
 		g_event_status |= EVENT_LIS3DH_VALUE;
 	}
 
-	if ((g_event_status & EVENT_DATA_SENDED) && (data_send_completed++ >= 30))
+	if (g_status_ble_connect == true)
 	{
-		//数据传输完成后30s断开蓝牙连接
-		g_event_status&= ~EVENT_DATA_SENDED;
-		data_send_completed = 0;
-		if (ble_connect_status == true)
+		if ((g_event_status & EVENT_DATA_SENDED) && (data_send_completed++ >= 30))
 		{
+			//数据传输完成后30s断开蓝牙连接
+			data_send_completed = 0;
 			g_event_status |= EVENT_BLE_SHUT_CONNECT;
+			g_event_status&= ~EVENT_DATA_SENDED;
 		}
 	}
 
@@ -1159,10 +1226,28 @@ static void period_cycle_process(void * p_context)
 		battery_timer = 0;
 	}
 
-	//报警管理
-	if (alarm_status == true)
+	//检查存储状态
+	if (queue_is_full())
 	{
+		g_event_status |= EVENT_DATA_FULL;
+	}
 
+	if ((g_status_ble_connect == true) &&
+		(system_params.device_bonded == true) &&
+		(g_status_bond_info_received == false) &&
+		(one_shot_timer ++ > 10))
+	{
+		g_event_status |= EVENT_BLE_SHUT_CONNECT;
+	}
+	else
+	{
+		one_shot_timer = 0;
+		g_status_bond_info_received = false;
+	}
+
+	if (g_status_alarm_status)
+	{
+		alarm_process();
 	}
 }
 
@@ -1262,18 +1347,13 @@ static float calculateTilt_B(float ax, float ay, float az)
 	if (fabs(ay) < temp)
 	{
 		Tiltangle = asin(fabs(ay));
-//		if (Tiltangle < 0) {
-//			Tiltangle = - Tiltangle;
-//		}
 		Tiltangle = Tiltangle/PI*180;
-//		app_trace_log("asin Tiltangle:%f\n",Tiltangle);
 	}
 	else
 	{
 		Tiltangle = acos(fabs(ay));
 		Tiltangle = Tiltangle/PI*180;
 		Tiltangle = 90-Tiltangle;
-//		app_trace_log("acos Tiltangle:%f\n",Tiltangle);
 	}
 	if((az < 0)&&(ay > 0))
 	{
@@ -1290,6 +1370,7 @@ static float calculateTilt_B(float ax, float ay, float az)
 
 	return Tiltangle;
 }
+#if 0
 //返回角度差
 //flag = 1重新获取角度基准值，flag = 0开始计算
 //以Y轴作为转动轴
@@ -1331,6 +1412,7 @@ static float calculateTilt_run_B(float ax, float ay, float az)
         return Tiltangle_return;
 
 }
+#endif
 //报文处理函数
 static void message_process(uint8_t *ch)
 {
@@ -1388,27 +1470,39 @@ static void message_process(uint8_t *ch)
 		system_params_save(&system_params);
 		break;
 	case CMD_DEVICE_BOND:
+
 		if(ch[3] == 0x01)
 		{
-			//设备绑定
-			system_params.device_bonded = 0x0001;
-			memcpy((char *)system_params.mac_add,&ch[4],11);
-			system_params_save(&system_params);
-			//发送响应报文
-			data_array[0] = 0xA5;
-			data_array[1] = 0x01;
-			data_array[2] = CMD_DEVICE_BOND;
-			data_array[3] = 0x80;
-			err_code = ble_nus_send_string(&m_nus, data_array, 4);
-	        if (err_code != NRF_ERROR_INVALID_STATE)
-	        {
-	            APP_ERROR_CHECK(err_code);
-	        }
+			if(system_params.device_bonded == false)
+			{
+				//设备绑定
+				system_params.device_bonded = 0x0001;
+				memcpy((char *)system_params.mac_add,&ch[4],11);
+				system_params_save(&system_params);
+				g_status_bond_info_received = true;
+				//发送响应报文
+				data_array[0] = 0xA5;
+				data_array[1] = 0x01;
+				data_array[2] = CMD_DEVICE_BOND;
+				data_array[3] = 0x80;
+				err_code = ble_nus_send_string(&m_nus, data_array, 4);
+		        if (err_code != NRF_ERROR_INVALID_STATE)
+		        {
+		            APP_ERROR_CHECK(err_code);
+		        }
+			}
+			else
+			{
+				if(memcmp(&ch[4],(char *)system_params.mac_add,11)==0)
+				{
+					g_status_bond_info_received = true;
+				}
+			}
 		}
 		else if (ch[3] == 0x02)
 		{
 			//设备解绑
-			system_params.device_bonded = 0xFFFF;
+			system_params.device_bonded = 0xFF;
 			memset((char *)system_params.mac_add,0xFF,11);
 			system_params_save(&system_params);
 			//发送响应报文
@@ -1537,6 +1631,10 @@ int main(void)
     {
         //led 管理
         leds_process();
+		if (g_status_work)
+		{
+			sleep_manage();
+		}
 		if (g_event_status & EVENT_LIS3DH_VALUE)
 		{
 			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
@@ -1547,8 +1645,8 @@ int main(void)
 				az = Axes_Raw_Data.AXIS_Z/16384.0;
 				app_trace_log("X=%6f Y=%6f Z=%6f \r\n",
 					ax,ay,az);
-				Tilt = calculateTilt_run_B(ax,ay,az);
-				app_trace_log("Tilt = %6f \r\n", Tilt);
+				g_cur_Tilt = calculateTilt_B(ax,ay,az);
+				app_trace_log("Tilt = %6f \r\n", g_cur_Tilt);
 //				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
 //					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
 			}
@@ -1562,7 +1660,7 @@ int main(void)
 				item.hour = time.hour;
 				item.min = time.minutes;
 				item.second = time.seconds;
-				item.angle = (uint16_t)(Tilt*100);
+				item.angle = (uint16_t)(g_cur_Tilt*100);
 				queue_push(&item);
 				g_event_status &= ~ EVENT_TILT_PUSH;
 				app_trace_log("data push y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
@@ -1570,59 +1668,91 @@ int main(void)
 			}
 			g_event_status &= ~EVENT_LIS3DH_VALUE;
 		}
-        
+		if (g_event_status & EVENT_KEY_PRESS_SHOT)
+		{
+			if (g_status_work != true)
+			{
+				if (g_status_adv == true)
+				{
+					g_event_status |= EVENT_ADV_STOP;
+					g_event_status |= EVENT_BEGIN_WORK;
+				}
+				else if ((g_status_ble_connect == true)
+					&&(g_status_data_send != true))
+				{
+					g_event_status |= EVENT_BLE_SHUT_CONNECT;
+					g_event_status |= EVENT_BEGIN_WORK;
+				}
+			}
+			else
+			{
+				g_event_status |= EVENT_END_WORK;
+			}
+			g_event_status &= ~EVENT_KEY_PRESS_SHOT;
+
+		}
+		else if(g_event_status & EVENT_KEY_PRESS_LONG)
+		{
+			if ((g_status_work != true) &&
+					(g_status_ble_connect != true) &&
+					(g_status_adv    != true))
+			{
+				g_event_status |= EVENT_ADV_START;
+			}
+		}
         if (g_event_status & EVENT_BEGIN_WORK)
-        {
-            leds_process_init(LED_WORK_BEGIN);
-            if (adv_status == true)
-            {
-                g_event_status |= EVENT_ADV_STOP;
-            }
+        {//开始工作
+        	leds_process_init(LED_WORK_BEGIN);
+			// begin to work
+			g_status_work = true;
+			//初始化角度值
+			g_status_tilt_init_flag = true;
             g_event_status &= ~(EVENT_BEGIN_WORK);
         }
-        
+
         if (g_event_status & EVENT_END_WORK)
-        {
+        {//停止工作
             leds_process_init(LED_WORK_END);
+			// stop work
+			g_status_work = false;
+			//初始化角度值
+			g_status_tilt_init_flag = false;
             g_event_status &= ~(EVENT_END_WORK);
         }
-        
+
         if (g_event_status & EVENT_DATA_SENDING)
-        {
-    		data_send_status = true;
+        {//开始发送数据
+    		g_status_data_send = true;
             leds_process_init(LED_WORK_BLE_DATA_TRAING);
             g_event_status &= ~(EVENT_DATA_SENDING);
         }
-        
+
 		if (g_event_status & EVENT_MESSAGE_RECEIVED)
 		{//有数据接收
 			message_process(rec_data_buffer);
 			g_event_status &= ~(EVENT_MESSAGE_RECEIVED);
 		}
-        
-		if (g_event_status & EVENT_BATTRY_VALUE)
-		{
-			battery_value = adc_start();
-			g_event_status &= ~(EVENT_BATTRY_VALUE);
-		}
-        
+
 		if (g_event_status & EVENT_ADV_START)
-		{
-			advertising_start();
-			adv_status = true;
+		{//开始广播
+			if ((g_status_work != true) && (g_status_adv!= true))
+			{
+				advertising_start();
+				g_status_adv = true;
+			}
 			g_event_status &= ~(EVENT_ADV_START);
 		}
-        
+
 		if (g_event_status & EVENT_ADV_STOP)
-		{
+		{//停止广播
 			err_code = sd_ble_gap_adv_stop();
 			APP_ERROR_CHECK(err_code);
-			adv_status = false;
+			g_status_adv = false;
 			g_event_status &= ~(EVENT_ADV_STOP);
 		}
-        
+
 		if (g_event_status & EVENT_BLE_SHUT_CONNECT)
-		{
+		{//关闭蓝牙连接
 			#if defined(DEBUG_APP)
 			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
 			APP_ERROR_CHECK(err_code);
@@ -1630,29 +1760,46 @@ int main(void)
 			app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
 			g_event_status &= ~EVENT_BLE_SHUT_CONNECT;
 		}
-        
+
+		if (g_event_status & EVENT_BLE_CONNECTED)
+		{//蓝牙连接
+			g_status_adv = false;
+			g_status_ble_connect = true;
+			leds_process_init(LED_WORK_BLE_CONNECTED);
+			g_event_status &= ~EVENT_BLE_CONNECTED;
+		}
+		if (g_event_status & EVENT_BLE_DISCONNECTED)
+		{//蓝牙连接断开
+			g_status_ble_connect = false;
+			g_event_status &= ~EVENT_BLE_DISCONNECTED;
+		}
 		if (g_event_status & EVENT_DATA_SYNC)
-		{
+		{//数据同步
 			queue_sync();
 			g_event_status &= ~EVENT_DATA_SYNC;
 		}
-        
+
         if (g_event_status & EVENT_BATTRY_VALUE)
-        {
+        {//更新电池电量
             battery_manager();
             battery_value = battery_get_value();
             g_event_status &= ~EVENT_BATTRY_VALUE;
         }
-        
+
+		if (g_event_status & EVENT_DATA_FULL)
+		{
+			leds_process_init(LED_WORK_DATA_FULL);
+			g_event_status &= ~EVENT_DATA_FULL;
+		}
 		//数据发送
-		if (data_send_status == true)
+		if (g_status_data_send == true)
 		{//开始发送数据
-			if (ble_connect_status == true)
+			if (g_status_ble_connect == true)
 			{
 				if (queue_pop(&item))
 				{
 					//发送完成
-					data_send_status = false;
+					g_status_data_send = false;
                     leds_process_init(LED_IDLE);
 					g_event_status |= EVENT_DATA_SENDED;
 					//发送传输完成报文
@@ -1691,10 +1838,9 @@ int main(void)
 			}
 			else
 			{
-				data_send_status = false;
+				g_status_data_send = false;
 			}
 		}
-		//报警管理
         power_manage();
     }
 }

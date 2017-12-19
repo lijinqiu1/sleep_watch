@@ -124,7 +124,7 @@ void leds_process(void)
                 TimeSeconds_rate = TimeSeconds;
                 if (led_flash_method.flash_led == LED_FLASH_LED_RED)
                 {
-                    nrf_gpio_pin_set(LED_GREEN);`
+                    nrf_gpio_pin_set(LED_GREEN);
                     nrf_gpio_pin_toggle(LED_RED);
                 }
                 else if (led_flash_method.flash_led == LED_FLASH_LED_GREEN)
@@ -214,7 +214,7 @@ void leds_process(void)
     }
     else
     {
-        if (TimeSeconds > (led_flash_method.flash_period + begin_TimeSeconds)
+        if (TimeSeconds > (led_flash_method.flash_period + begin_TimeSeconds))
         {
             begin_TimeSeconds = TimeSeconds;
         }

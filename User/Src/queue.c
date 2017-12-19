@@ -242,3 +242,15 @@ void system_params_save(system_params_t * params)
 	while(queue_status == QUEUE_STATUS_UPDATING);
 }
 
+uint8_t queue_is_full(void)
+{
+	if ((QUEUE_ENTRIES_NUM - queue_entries.entries) > (20 * 10))
+	{//队列未满
+		return 0;
+	}
+	else
+	{//队列满
+		return 1;
+	}
+}
+
