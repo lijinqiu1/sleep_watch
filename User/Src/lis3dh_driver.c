@@ -24,7 +24,13 @@
 *******************************************************************************/
 
 /* Includes ------------------------------------------------------------------*/
+#include "app_util_platform.h"
+#include "nordic_common.h"
+#include "nrf.h"
+#include "softdevice_handler.h"
+#include "boards.h"
 #include "lis3dh_driver.h"
+#include "spi_master.h"
 
 extern uint8_t SPI_Mems_Read_Reg(uint8_t reg);
 extern void SPI_Mems_Write_Reg(uint8_t WriteAddr, uint8_t Data);
@@ -33,6 +39,74 @@ extern void SPI_Mems_Write_Reg(uint8_t WriteAddr, uint8_t Data);
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
 /* Private function prototypes -----------------------------------------------*/
+/******************SPI Driver**********************/
+static bool transmission_completed = 0; //spi传输状态
+static uint8_t rx_buffer[2];
+static uint8_t tx_buffer[2];
+static void SPI_Master_Event_Handler(spi_master_evt_t spi_master_evt)
+{
+	switch (spi_master_evt.evt_type)
+	{
+		case SPI_MASTER_EVT_TRANSFER_COMPLETED:
+			transmission_completed = true;//传输完成
+			break;
+		default :
+			break;
+	}
+}
+
+static void SPI_Init(void)
+{
+	spi_master_config_t spi_config = SPI_MASTER_INIT_DEFAULT;
+
+	spi_config.SPI_Freq = SPI_FREQUENCY_FREQUENCY_K125;
+	spi_config.SPI_Pin_SCK = SPIM1_SCK_PIN;
+	spi_config.SPI_Pin_MISO = SPIM1_MISO_PIN;
+	spi_config.SPI_Pin_MOSI = SPIM1_MOSI_PIN;
+	spi_config.SPI_Pin_SS = SPIM1_SS_PIN;
+	spi_config.SPI_CONFIG_CPOL = SPI_CONFIG_CPOL_ActiveLow;
+	spi_config.SPI_CONFIG_CPHA = SPI_CONFIG_CPHA_Trailing;
+	spi_config.SPI_CONFIG_ORDER = SPI_CONFIG_ORDER_MsbFirst;
+
+	uint32_t err_code = spi_master_open(SPI_MASTER_1, &spi_config);
+	if (err_code != NRF_SUCCESS)
+	{
+
+	}
+
+	spi_master_evt_handler_reg(SPI_MASTER_1,SPI_Master_Event_Handler);
+
+//	nrf_gpio_pin_clear(SPIM0_SS_PIN);
+}
+
+uint8_t SPI_Mems_Read_Reg(uint8_t reg)
+{
+	uint32_t err_code = 0;
+	tx_buffer[0] = reg;
+	tx_buffer[1] = 0;
+	err_code = spi_master_send_recv(SPI_MASTER_1,tx_buffer,2,rx_buffer,2);
+	if (err_code != NRF_SUCCESS)
+	{
+
+	}
+	while( transmission_completed==0);
+	transmission_completed = 0;
+	return rx_buffer[1];
+}
+
+void SPI_Mems_Write_Reg(uint8_t WriteAddr, uint8_t Data)
+{
+	uint32_t err_code = 0;
+	tx_buffer[0] = WriteAddr;
+	tx_buffer[1] = Data;
+	err_code = spi_master_send_recv(SPI_MASTER_1,tx_buffer,2,rx_buffer,2);
+	if (err_code != NRF_SUCCESS)
+	{
+
+	}
+	while( transmission_completed==0);
+	transmission_completed = 0;
+}
 
 /*******************************************************************************
 * Function Name		: LIS3DH_ReadReg
@@ -1632,5 +1706,23 @@ status_t LIS3DH_SetSPIInterface(LIS3DH_SPIMode_t spi) {
     return MEMS_ERROR;
 
   return MEMS_SUCCESS;
+}
+
+
+//3轴传感器初始化
+void LIS3DH_Init(void)
+{
+	SPI_Init();
+	//设置采样率
+	LIS3DH_SetODR(LIS3DH_ODR_100Hz);
+
+	//设置工作模式
+	LIS3DH_SetMode(LIS3DH_NORMAL);
+
+	//设置扫描范围 正负2g
+	LIS3DH_SetFullScale(LIS3DH_FULLSCALE_2);
+
+	//使能3轴
+	LIS3DH_SetAxis(LIS3DH_X_ENABLE | LIS3DH_Y_ENABLE | LIS3DH_Z_ENABLE);
 }
 /******************* (C) COPYRIGHT 2012 STMicroelectronics *****END OF FILE****/
