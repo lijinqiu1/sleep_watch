@@ -1,11 +1,10 @@
 #include <string.h>
 #include <stdint.h>
+#include "queue.h"
 #include "nrf.h"
 #include "nordic_common.h"
 #include "softdevice_handler.h"
 #include "pstorage.h"
-#include "pwm.h"
-#include "queue.h"
 
 //变量声明
 //系统参数信息
@@ -46,7 +45,7 @@ static void flash_cb(pstorage_handle_t * handle, uint8_t op_code, uint32_t resul
 		break;
 	}
 }
-
+#if 1
 void queue_init(void)
 {
 	pstorage_handle_t dest_block_id;
@@ -62,25 +61,24 @@ void queue_init(void)
 
 	err_code = pstorage_register(&module_param, &block_id);
 	APP_ERROR_CHECK(err_code);
+	
+	queue_entries.entries = 3;
 
-	//获取队列信息
-	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
-	pstorage_load((uint8_t*)&queue_entries, &dest_block_id, QUEUE_STATUS_SIZE ,QUEUE_STATUS_ADDRESS);
-	//获取系统信息
-	pstorage_load((uint8_t*)&system_params, &dest_block_id, SYSTEM_PARAMS_SIZE,SYSTEM_PARAMS_ADDRESS);
-	if (queue_entries.entries == 0xFFFF || queue_entries.tx_point == 0xFFFF \
-		|| queue_entries.rx_point == 0xFFFF) {
-	//第一次开机flash里面没有存储数据
-		memset((char*)&queue_entries,0x00,sizeof(queue_entries));
-	}
-	if ( system_params.time[0] == 0xFFFF)
-	{
-		memset(system_params.time, 0x00, 12);
-	}
-	if ( system_params.moto_strong == 0xFFFF )
-	{
-		system_params.moto_strong = DEFAULT_MOTO_STRONG;
-	}
+//	//获取队列信息
+//	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
+//	pstorage_load((uint8_t*)&queue_entries, &dest_block_id, QUEUE_STATUS_SIZE ,QUEUE_STATUS_ADDRESS);
+//	//获取系统信息
+//	pstorage_load((uint8_t*)&system_params, &dest_block_id, SYSTEM_PARAMS_SIZE,SYSTEM_PARAMS_ADDRESS);
+//	if (queue_entries.entries == 0xFFFF || queue_entries.tx_point == 0xFFFF \
+//		|| queue_entries.rx_point == 0xFFFF) {
+//	//第一次开机flash里面没有存储数据
+//		memset((char*)&queue_entries,0x00,sizeof(queue_entries));
+//	}
+//	if (system_params.angle == 0xFFFF || system_params.time )
+//	{
+//		system_params.angle =   DEFAULT_ALARM_ANGLE;
+//		system_params.time = DEFAULT_ALARM_TIME;
+//	}
 }
 
 void queue_push(queue_items_t *item)
@@ -90,7 +88,9 @@ void queue_push(queue_items_t *item)
 	pstorage_handle_t dest_block_id;
 	while (queue_status != QUEUE_STATUS_UPDATE_READY);
 
-RETRY:
+//	block_num = queue_entries.tx_point / QUEUE_BLOCK_ITEMS_COUNT;
+//	offset = (queue_entries.tx_point % QUEUE_BLOCK_ITEMS_COUNT) * sizeof(queue_items_t);
+
 	block_num = ((queue_entries.tx_point * QUEUE_ITEM_SIZE) + QUEUE_BEGING_ADDRESS) / FLASH_BLOCK;
 	offset = ((queue_entries.tx_point * QUEUE_ITEM_SIZE) + QUEUE_BEGING_ADDRESS) % FLASH_BLOCK;
 	//队列保存
@@ -98,23 +98,6 @@ RETRY:
 	pstorage_update(&dest_block_id,(uint8_t *)item,QUEUE_ITEM_SIZE,offset);
 	queue_status = QUEUE_STATUS_UPDATING;
 	while(queue_status == QUEUE_STATUS_UPDATING);
-	if (queue_status != QUEUE_STATUS_UPDATE_READY)
-	{//如果存储失败调至下一个扇区
-		if (queue_entries.entries == QUEUE_ENTRIES_NUM)
-		{
-			queue_entries.rx_point++;
-			if (queue_entries.rx_point % QUEUE_ENTRIES_NUM == 0)
-			{
-				queue_entries.rx_point = 0;
-			}
-		}
-		queue_entries.tx_point ++;
-		if (queue_entries.tx_point % QUEUE_ENTRIES_NUM == 0)
-		{
-			queue_entries.tx_point = 0;
-		}
-		goto RETRY;
-	}
 	if (queue_entries.entries != QUEUE_ENTRIES_NUM)
 	{//队列未满
 		queue_entries.entries++;
@@ -133,13 +116,11 @@ RETRY:
 	{
 		queue_entries.tx_point = 0;
 	}
-/*
 	//队列信息保存
 	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
 	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,QUEUE_STATUS_SIZE,QUEUE_STATUS_ADDRESS);
 	queue_status = QUEUE_STATUS_UPDATING;
 	while(queue_status == QUEUE_STATUS_UPDATING);
-*/
 }
 
 uint8_t queue_pop(queue_items_t *item)
@@ -147,84 +128,166 @@ uint8_t queue_pop(queue_items_t *item)
 	pstorage_size_t offset;
 	pstorage_size_t block_num;
 	pstorage_handle_t dest_block_id;
-#if defined(DEBUG_APP)
-	uint16_t angle[60] = {
-			 00, 10, 20, 30, 40, 50, 60, 70, 80, 90,
-			100,140,180,140,100, 50, 00, 50,100,140,
-			180,240,280,320,360, 50, 40, 50, 40, 50,
-		     40, 50, 40, 50, 40, 50, 40, 50, 40, 50,
-		     40, 50, 40, 50, 40, 50, 40, 50, 40, 50,
-		     40, 80, 90, 80, 90, 80, 90, 80, 90, 80,
-			};
-	if (queue_entries.entries == 0)
-	{
-		queue_entries.entries = 60;
-		return 1;
-	}
-	queue_entries.entries --;
-	item->year = 0x11;
-	item->mon = 0x01;
-	item->day = 0x01;
-	item->hour = 0x01;
-	item->min = 59 - queue_entries.entries;
-	item->second = 0x00;
-	item->angle = angle[59 - queue_entries.entries] * 100;
-#else
+
 	while (queue_status != QUEUE_STATUS_UPDATE_READY);
 
 	if (queue_entries.entries == 0)
 	{
+		queue_entries.entries = 3;
 		return 1;
 	}
-RETRY:
-	block_num = ((queue_entries.rx_point * QUEUE_ITEM_SIZE) + QUEUE_BEGING_ADDRESS) / FLASH_BLOCK;
-	offset = ((queue_entries.rx_point * QUEUE_ITEM_SIZE) + QUEUE_BEGING_ADDRESS) % FLASH_BLOCK;
-
-
-	pstorage_block_identifier_get(&block_id, block_num, &dest_block_id);
-	queue_status = QUEUE_STATUS_LOADING;
-	pstorage_load((uint8_t*)item, &dest_block_id, QUEUE_ITEM_SIZE,offset);
-	while(queue_status == QUEUE_STATUS_LOADING);
-	if (queue_status != QUEUE_STATUS_LOAD_SUCCESS)
-	{//如果存储失败调至下一个扇区
-		queue_entries.rx_point ++;
-		if (queue_entries.rx_point % QUEUE_ENTRIES_NUM == 0)
-		{
-			queue_entries.rx_point = 0;
-		}
-		goto RETRY;
-	}
+	
+	item->year = 0x11;
+	item->mon = 0x0b;
+	item->day = 0x12;
+	item->hour = 0x00;
+	item->min = 0x00;
+	item->second = 0x00;
+	item->angle = 1000;
 	if (queue_entries.entries != 0)
 	{
 		queue_entries.entries--;
 	}
-	queue_entries.rx_point ++;
-	if (queue_entries.rx_point % QUEUE_ENTRIES_NUM == 0)
-	{
-		queue_entries.rx_point = 0;
-	}
-/*
-	//队列信息保存
-	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
-	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,QUEUE_STATUS_SIZE,QUEUE_STATUS_ADDRESS);
-	queue_status = QUEUE_STATUS_UPDATING;
-	while(queue_status == QUEUE_STATUS_UPDATING);
-*/
-#endif
+	return 0;
+//	if (queue_entries.entries == 0)
+//	{
+//		return 1;
+//	}
+
+////	block_num = queue_entries.rx_point / QUEUE_BLOCK_ITEMS_COUNT;
+////	offset = (queue_entries.rx_point % QUEUE_BLOCK_ITEMS_COUNT) * sizeof(queue_items_t);
+
+//	block_num = ((queue_entries.rx_point * QUEUE_ITEM_SIZE) + QUEUE_BEGING_ADDRESS) / FLASH_BLOCK;
+//	offset = ((queue_entries.rx_point * QUEUE_ITEM_SIZE) + QUEUE_BEGING_ADDRESS) % FLASH_BLOCK;
+
+
+//	pstorage_block_identifier_get(&block_id, block_num, &dest_block_id);
+//	queue_status = QUEUE_STATUS_LOADING;
+//	pstorage_load((uint8_t*)item, &dest_block_id, QUEUE_ITEM_SIZE,offset);
+//	while(queue_status == QUEUE_STATUS_LOADING);
+//	if (queue_entries.entries != 0)
+//	{
+//		queue_entries.entries--;
+//	}
+//	queue_entries.rx_point ++;
+//	if (queue_entries.rx_point % QUEUE_ENTRIES_NUM == 0)
+//	{
+//		queue_entries.rx_point = 0;
+//	}
+//	//队列信息保存
+//	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
+//	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,QUEUE_STATUS_SIZE,QUEUE_STATUS_ADDRESS);
+//	queue_status = QUEUE_STATUS_UPDATING;
+//	while(queue_status == QUEUE_STATUS_UPDATING);
 	return 0;
 }
-
-//用于保存队列信息,避免重复写入同一块flash扇区
-void queue_sync(void)
+#else
+void queue_init(void)
 {
 	pstorage_handle_t dest_block_id;
-	//队列信息保存
+	uint32_t err_code;
+	pstorage_module_param_t module_param;
+	module_param.block_count = 8;
+	module_param.block_size = 1024;
+	module_param.cb = flash_cb;
+	pstorage_init();
+	err_code = pstorage_register(&module_param, &block_id);
+	APP_ERROR_CHECK(err_code);
 	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
-	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,QUEUE_STATUS_SIZE,QUEUE_STATUS_ADDRESS);
+	pstorage_load((uint8_t*)&queue_entries, &dest_block_id, sizeof(queue_t),0);
+	if (queue_entries.entries == 0xFFFF && queue_entries.tx_point == 0xFFFF \
+		&& queue_entries.rx_point == 0xFFFF) {
+	//第一次开机flash里面没有存储数据
+		memset((char*)&queue_entries,0x00,sizeof(queue_entries));
+	//初始队列数量为1，用于保存队列数据
+		queue_entries.entries = 1;
+		queue_entries.tx_point = 1;
+		queue_entries.rx_point   = 1;
+	}
+	//初始化缓存队列
+//	current_block_num = queue_entries.tx_point / QUEUE_BLOCK_ITEMS_COUNT;
+//	pstorage_block_identifier_get(&block_id, current_block_num, &dest_block_id);
+//	pstorage_load((uint8_t*)&queue_items_buff, &dest_block_id,\
+//		sizeof(queue_items_t) * QUEUE_BLOCK_ITEMS_COUNT,0);
+}
+
+void queue_push(queue_items_t *item)
+{
+	pstorage_size_t offset;
+	pstorage_size_t block_num;
+	pstorage_handle_t dest_block_id;
+	if (queue_status != QUEUE_STATUS_UPDATE_READY)
+	{
+		return ;
+	}
+
+	block_num = queue_entries.tx_point / QUEUE_BLOCK_ITEMS_COUNT;
+	offset = (queue_entries.tx_point % QUEUE_BLOCK_ITEMS_COUNT) * sizeof(queue_items_t);
+
+	//队列保存
+	pstorage_block_identifier_get(&block_id, block_num, &dest_block_id);
+	pstorage_update(&dest_block_id,(uint8_t *)item,sizeof(queue_items_t),offset);
 	queue_status = QUEUE_STATUS_UPDATING;
 	while(queue_status == QUEUE_STATUS_UPDATING);
-	return ;
+
+
+	if (queue_entries.entries != QUEUE_MAX_ENTRIES)
+	{//队列未满
+		queue_entries.entries++;
+	}
+	else
+	{
+		queue_entries.rx_point++;
+		if (queue_entries.rx_point % QUEUE_MAX_ENTRIES == 0)
+		{
+			queue_entries.rx_point = 1;
+		}
+	}
+
+	queue_entries.tx_point ++;
+	if (queue_entries.tx_point % QUEUE_MAX_ENTRIES == 0)
+	{//跳过队列第一条，因为第一条用于存储队列信息
+		queue_entries.tx_point = 1;
+	}
+
+	//队列信息保存
+	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
+	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,sizeof(queue_t),0);
+	queue_status = QUEUE_STATUS_UPDATING;
 }
+
+void queue_pop(queue_items_t *item)
+{
+	pstorage_size_t offset;
+	pstorage_size_t block_num;
+	pstorage_handle_t dest_block_id;
+
+	if (queue_entries.entries == 1)
+	{
+		return ;
+	}
+
+	block_num = queue_entries.tx_point / QUEUE_BLOCK_ITEMS_COUNT;
+	offset = (queue_entries.tx_point % QUEUE_BLOCK_ITEMS_COUNT) * sizeof(queue_items_t);
+
+	pstorage_block_identifier_get(&block_id, block_num, &dest_block_id);
+	pstorage_load((uint8_t*)&item, &dest_block_id, sizeof(queue_items_t),offset);
+
+	if (queue_entries.entries != 1)
+	{
+		queue_entries.entries--;
+	}
+	queue_entries.rx_point ++;
+	if (queue_entries.rx_point % QUEUE_MAX_ENTRIES == 0)
+	{
+		queue_entries.rx_point = 1;
+	}
+	//队列信息保存
+	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
+	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,sizeof(queue_t),0);
+	queue_status = QUEUE_STATUS_UPDATING;
+}
+#endif
 uint16_t queue_get_entries(void)
 {
 	return queue_entries.entries;
@@ -240,17 +303,5 @@ void system_params_save(system_params_t * params)
 	pstorage_update(&dest_block_id, (uint8_t *)params,sizeof(system_params_t),sizeof(queue_t));
 	queue_status = QUEUE_STATUS_UPDATING;
 	while(queue_status == QUEUE_STATUS_UPDATING);
-}
-
-uint8_t queue_is_full(void)
-{
-	if ((QUEUE_ENTRIES_NUM - queue_entries.entries) > (20 * 10))
-	{//队列未满
-		return 0;
-	}
-	else
-	{//队列满
-		return 1;
-	}
 }
 

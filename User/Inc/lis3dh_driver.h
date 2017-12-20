@@ -519,7 +519,7 @@ status_t LIS3DH_Get6DPosition(uint8_t* val);
 //Generic
 // i.e. uint8_t LIS3DH_ReadReg(uint8_t Reg, uint8_t* Data);
 // i.e. uint8_t LIS3DH_WriteReg(uint8_t Reg, uint8_t Data);
-void LIS3DH_Init(void);
+
 
 #endif /* __LIS3DH_H */
 

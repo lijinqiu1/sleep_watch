@@ -11,11 +11,11 @@ typedef struct {
 }queue_t;
 
 typedef struct {
-	uint8_t time[6]; //干涉时间
-	uint8_t mac_add[11]; //设备的MAC地址
-	uint8_t device_bonded; //设备绑定标志
-	uint8_t moto_strong;
-	uint8_t Reserved[5];
+	uint16_t angle; //干涉角度
+	uint16_t time; //干涉时间
+	uint8_t mac_add[6]; //设备的MAC地址
+	uint16_t device_bonded; //设备绑定标志
+	uint16_t Reserved[2];
 }system_params_t;
 
 typedef struct {
@@ -30,7 +30,8 @@ typedef struct {
 
 /**************************干涉条件******************************/
 #define DEFAULT_ALARM_ANGLE				75  /**< 默认干涉角度 单位: °>**/
-#define DEFAULT_ALARM_TIME              120 /**< 默认干涉时间 单位: s >**/
+#define DEFAULT_ALARM_TIME              300 /**< 默认干涉时间 单位: s >**/
+
 /**************************存储队列******************************/
 //flash block 大小
 #define FLASH_BLOCK               1024
@@ -74,8 +75,6 @@ uint8_t queue_pop(queue_items_t *item);
 void queue_push(queue_items_t *item);
 uint16_t queue_get_entries(void);
 void system_params_save(system_params_t * params);
-void queue_sync(void);
-uint8_t queue_is_full(void);
 
 
 #endif
