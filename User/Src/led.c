@@ -20,9 +20,9 @@ static Led_Flash_Method_t led_flash_method = {
 void leds_init(void)
 {
     nrf_gpio_cfg_output(LED_RED);
-    nrf_gpio_cfg_output(LED_GREEN);
+    nrf_gpio_cfg_output(LED_BLUE);
     nrf_gpio_pin_set(LED_RED);
-    nrf_gpio_pin_set(LED_GREEN);
+    nrf_gpio_pin_set(LED_BLUE);
 }
 
 void leds_process_init(Led_Work_Status_t status)
@@ -45,14 +45,14 @@ void leds_process_init(Led_Work_Status_t status)
 	case LED_WORK_POWER_CHARGING:
         led_flash_method.flash_rate = LED_FLASH_RATE_BREATH;
         led_flash_method.flash_time = LED_FLASH_TIME_LONG;
-        led_flash_method.flash_led = LED_FLASH_LED_GREEN;
+        led_flash_method.flash_led = LED_FLASH_LED_BLUE;
         led_flash_method.flash_period = 0;
         begin_TimeSeconds = TimeSeconds;
 		break;
 	case LED_WORK_POWER_CHARGE_COMPLETE:
         led_flash_method.flash_rate = LED_FLASH_RATE_ON;
         led_flash_method.flash_time = LED_FLASH_TIME_LONG;
-        led_flash_method.flash_led = LED_FLASH_LED_GREEN;
+        led_flash_method.flash_led = LED_FLASH_LED_BLUE;
         led_flash_method.flash_period = 0;
         begin_TimeSeconds = TimeSeconds;
 		break;
@@ -66,7 +66,7 @@ void leds_process_init(Led_Work_Status_t status)
 	case LED_WORK_BLE_DATA_TRAING:
         led_flash_method.flash_rate = LED_FLASH_RATE_FAST;
         led_flash_method.flash_time = LED_FLASH_TIME_LONG;
-        led_flash_method.flash_led = LED_FLASH_LED_GREEN;
+        led_flash_method.flash_led = LED_FLASH_LED_BLUE;
         led_flash_method.flash_period = 0;
         begin_TimeSeconds = TimeSeconds;
 		break;
@@ -87,7 +87,7 @@ void leds_process_init(Led_Work_Status_t status)
 	case LED_WORK_BEGIN:
         led_flash_method.flash_rate = LED_FLASH_RATE_1HZ;
         led_flash_method.flash_time = 10;
-        led_flash_method.flash_led = LED_FLASH_LED_GREEN;
+        led_flash_method.flash_led = LED_FLASH_LED_BLUE;
         led_flash_method.flash_period = 0;
         begin_TimeSeconds = TimeSeconds;
 		break;
@@ -124,25 +124,25 @@ void leds_process(void)
                 TimeSeconds_rate = TimeSeconds;
                 if (led_flash_method.flash_led == LED_FLASH_LED_RED)
                 {
-                    nrf_gpio_pin_set(LED_GREEN);
+                    nrf_gpio_pin_set(LED_BLUE);
                     nrf_gpio_pin_toggle(LED_RED);
                 }
-                else if (led_flash_method.flash_led == LED_FLASH_LED_GREEN)
+                else if (led_flash_method.flash_led == LED_FLASH_LED_BLUE)
                 {
                     nrf_gpio_pin_set(LED_RED);
-                    nrf_gpio_pin_toggle(LED_GREEN);
+                    nrf_gpio_pin_toggle(LED_BLUE);
                 }
                 else if (led_flash_method.flash_led == LED_FLASH_LED_BOTH)
                 {
                     if (flag)
                     {
                         nrf_gpio_pin_set(LED_RED);
-                        nrf_gpio_pin_clear(LED_GREEN);
+                        nrf_gpio_pin_clear(LED_BLUE);
                         flag = 0;
                     }
                     else
                     {
-                        nrf_gpio_pin_set(LED_GREEN);
+                        nrf_gpio_pin_set(LED_BLUE);
                         nrf_gpio_pin_clear(LED_RED);
                         flag = 1;
                     }
@@ -154,34 +154,34 @@ void leds_process(void)
             { 
                 pwm_led_start(LED_RED);
             }
-            else if (led_flash_method.flash_led == LED_FLASH_LED_GREEN)
+            else if (led_flash_method.flash_led == LED_FLASH_LED_BLUE)
             { 
-                pwm_led_start(LED_GREEN);
+                pwm_led_start(LED_BLUE);
             }
         break;
         case LED_FLASH_RATE_FAST:
             pwm_led_stop();
             if (led_flash_method.flash_led == LED_FLASH_LED_RED)
             {
-                nrf_gpio_pin_set(LED_GREEN);
+                nrf_gpio_pin_set(LED_BLUE);
                 nrf_gpio_pin_toggle(LED_RED);
             }
-            else if (led_flash_method.flash_led == LED_FLASH_LED_GREEN)
+            else if (led_flash_method.flash_led == LED_FLASH_LED_BLUE)
             {
                 nrf_gpio_pin_set(LED_RED);
-                nrf_gpio_pin_toggle(LED_GREEN);
+                nrf_gpio_pin_toggle(LED_BLUE);
             }
             else if (led_flash_method.flash_led == LED_FLASH_LED_BOTH)
             {
                 if (flag)
                 {
                     nrf_gpio_pin_set(LED_RED);
-                    nrf_gpio_pin_clear(LED_GREEN);
+                    nrf_gpio_pin_clear(LED_BLUE);
                     flag = 0;
                 }
                 else
                 {
-                    nrf_gpio_pin_set(LED_GREEN);
+                    nrf_gpio_pin_set(LED_BLUE);
                     nrf_gpio_pin_clear(LED_RED);
                     flag = 1;
                 }
@@ -191,36 +191,41 @@ void leds_process(void)
             pwm_led_stop();
             if (led_flash_method.flash_led == LED_FLASH_LED_RED)
             {
-                nrf_gpio_pin_set(LED_GREEN);
+                nrf_gpio_pin_set(LED_BLUE);
                 nrf_gpio_pin_clear(LED_RED);
             }
-            else if (led_flash_method.flash_led == LED_FLASH_LED_GREEN)
+            else if (led_flash_method.flash_led == LED_FLASH_LED_BLUE)
             {
                 nrf_gpio_pin_set(LED_RED);
-                nrf_gpio_pin_clear(LED_GREEN);
+                nrf_gpio_pin_clear(LED_BLUE);
             }
             else if (led_flash_method.flash_led == LED_FLASH_LED_BOTH)
             {
                 nrf_gpio_pin_clear(LED_RED);
-                nrf_gpio_pin_clear(LED_GREEN);
+                nrf_gpio_pin_clear(LED_BLUE);
             }
         break;
         case LED_FLASH_RATE_OFF:
             pwm_led_stop();
             nrf_gpio_pin_set(LED_RED);
-            nrf_gpio_pin_set(LED_GREEN);
+            nrf_gpio_pin_set(LED_BLUE);
         break;
         }
     }
     else
     {
-        if (TimeSeconds > (led_flash_method.flash_period + begin_TimeSeconds))
+        if ((led_flash_method.flash_period!= 0)&&
+			(TimeSeconds > (led_flash_method.flash_period + begin_TimeSeconds)))
         {
             begin_TimeSeconds = TimeSeconds;
         }
+		else
+		{
+			cur_led_status = LED_IDLE;
+		}
         pwm_led_stop();
         nrf_gpio_pin_set(LED_RED);
-        nrf_gpio_pin_set(LED_GREEN);
+        nrf_gpio_pin_set(LED_BLUE);
     }
 }
 

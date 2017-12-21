@@ -18,7 +18,7 @@ uint16_t current_block_num;
 //queue_items_t queue_items_buff[QUEUE_BLOCK_ITEMS_COUNT];
 queue_status_t queue_status = QUEUE_STATUS_UPDATE_READY;
 //*************************flash´æ´¢*******************************
-//ÐÞ¸ÄPSTORAGE_DATA_START_ADDRºê¶¨Òå£¬»®·Ö³ö8kÓÃÓÚ´æ´¢flashÊý¾Ý¡
+//ÐÞ¸ÄPSTORAGE_DATA_START_ADDRºê¶¨Òå£¬»®·Ö³ö8kÓÃÓÚ´æ´¢flashÊý¾Ý?
 
 pstorage_handle_t block_id;
 static void flash_cb(pstorage_handle_t * handle, uint8_t op_code, uint32_t result,
@@ -73,14 +73,18 @@ void queue_init(void)
 	//µÚÒ»´Î¿ª»úflashÀïÃæÃ»ÓÐ´æ´¢Êý¾Ý
 		memset((char*)&queue_entries,0x00,sizeof(queue_entries));
 	}
-	if ( system_params.time[0] == 0xFFFF)
+	if ( system_params.time[0] == 0xFF)
 	{
-		memset(system_params.time, 0x00, 12);
+		memset(system_params.time, 0x00, 6);
 	}
-	if ( system_params.moto_strong == 0xFFFF )
+	if ( system_params.moto_strong == 0xFF )
 	{
 		system_params.moto_strong = DEFAULT_MOTO_STRONG;
 	}
+    if (system_params.device_bonded == 0xFF)
+    {
+        system_params.device_bonded = 0;
+    }
 }
 
 void queue_push(queue_items_t *item)

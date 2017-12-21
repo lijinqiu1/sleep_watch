@@ -101,7 +101,7 @@
 //gpiote
 #define MAX_USERS						1
 //蓝牙拦截配对密码
-#define PAIR_PASS_WORD                  "111111"
+#define PAIR_PASS_WORD                  "123456"
 
 #if defined (ADV_GERANL)
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
@@ -141,10 +141,10 @@ static bool g_status_data_send = false;                                         
 static bool g_status_ble_connect = false;                                       //蓝牙连接状态
 static bool g_status_alarm_status = false;                                      //报警状态
 static bool g_status_bond_info_received = false;                                //接收到绑定信息
-static bool g_status_tilt_init_flag = false;                                             //角度值初始化
-static float g_cur_Tilt;                                                              //当前倾角变化值
+static bool g_status_tilt_init_flag = false;                                    //角度值初始化
+static float g_cur_Tilt;                                                        //当前倾角变化值
 static uint8_t rec_data_buffer[20];                                             //缓存接收到的数据
-static uint16_t battery_value;                                                  //电池电量
+
 
 typedef enum
 {
@@ -527,11 +527,9 @@ static void advertising_start(void)
 
 	if ((whitelist.addr_count != 0) || (whitelist.irk_count != 0))
 	{
-#if 0
-		if (system_params.device_bonded == 0xFFFF)
+#if 1
+		if (system_params.device_bonded == 0xFF)
 		{
-			err_code = dm_device_delete_all(&m_app_handle);
-			APP_ERROR_CHECK(err_code);
             advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
 		}
 		else
@@ -541,7 +539,6 @@ static void advertising_start(void)
 			advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
 		}
 #endif
-		advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
 	}
 
 	adv_params.interval = APP_ADV_INTERVAL_FAST;
@@ -549,11 +546,11 @@ static void advertising_start(void)
 
     // Start advertising.
     err_code = sd_ble_gap_adv_start(&adv_params);
-//	while (err_code != NRF_SUCCESS)
-//	{
-//		err_code = sd_ble_gap_adv_start(&adv_params);
-//	}
-//    APP_ERROR_CHECK(err_code);
+	while (err_code != NRF_SUCCESS)
+	{
+		err_code = sd_ble_gap_adv_start(&adv_params);
+	}
+    APP_ERROR_CHECK(err_code);
 }
 
 #elif defined (ADV_WHITELIST)
@@ -1220,12 +1217,12 @@ static void period_cycle_process(void * p_context)
 	}
 
 	//电池电量
-	if (battery_timer ++ > 60)
+	if (battery_timer ++ > 30)
 	{
 		g_event_status |= EVENT_BATTRY_VALUE;
 		battery_timer = 0;
 	}
-
+    battery_manager();
 	//检查存储状态
 	if (queue_is_full())
 	{
@@ -1235,11 +1232,11 @@ static void period_cycle_process(void * p_context)
 	if ((g_status_ble_connect == true) &&
 		(system_params.device_bonded == true) &&
 		(g_status_bond_info_received == false) &&
-		(one_shot_timer ++ > 10))
+		(one_shot_timer ++ > 30))
 	{
 		g_event_status |= EVENT_BLE_SHUT_CONNECT;
 	}
-	else
+	else if (g_status_ble_connect == false)
 	{
 		one_shot_timer = 0;
 		g_status_bond_info_received = false;
@@ -1420,6 +1417,7 @@ static void message_process(uint8_t *ch)
 	UTCTimeStruct tm;
 	uint32_t err_code;
 	uint8_t data_array[20];
+    uint16_t battery;
 	if (ch[0] != 0xA5)
 	{
 		return ;
@@ -1473,10 +1471,10 @@ static void message_process(uint8_t *ch)
 
 		if(ch[3] == 0x01)
 		{
-			if(system_params.device_bonded == false)
+			if(system_params.device_bonded == 0)
 			{
 				//设备绑定
-				system_params.device_bonded = 0x0001;
+				system_params.device_bonded = 0x01;
 				memcpy((char *)system_params.mac_add,&ch[4],11);
 				system_params_save(&system_params);
 				g_status_bond_info_received = true;
@@ -1521,7 +1519,30 @@ static void message_process(uint8_t *ch)
 		data_array[0] = 0xA5;
 		data_array[1] = 0x02;
 		data_array[2] = CMD_GET_BATTERY;
-		data_array[3] = (uint8_t)battery_value;
+        if(battery < BATTER_VALUE_20)
+        {
+            data_array[3] = 0;
+        }
+        else if(battery < BATTER_VALUE_40)
+        {
+            data_array[3] = 20;
+        }
+        else if(battery < BATTER_VALUE_60)
+        {
+            data_array[3] = 40;
+        }
+        else if(battery < BATTER_VALUE_80)
+        {
+            data_array[3] = 60;
+        }
+        else if(battery < BATTER_VALUE_100)
+        {
+            data_array[3] = 80;
+        }
+        else
+        {
+            data_array[3] = 100;
+        }
 		data_array[4] = 0x80;
 		err_code = ble_nus_send_string(&m_nus, data_array, 5);
         if (err_code != NRF_ERROR_INVALID_STATE)
@@ -1591,7 +1612,6 @@ int main(void)
     ble_stack_init();
 	  //flash初始化
 	queue_init();
-
 	device_manager_init();
     gap_params_init();
     services_init();
@@ -1607,7 +1627,7 @@ int main(void)
     leds_init();
 	battery_init();
     battery_manager();
-	battery_value = battery_get_value();
+	battery_get_value();
 	//gpiote初始化
     buttons_init();
 	//马达驱动初始化
@@ -1630,7 +1650,7 @@ int main(void)
     for (;;)
     {
         //led 管理
-        leds_process();
+//        leds_process();
 		if (g_status_work)
 		{
 			sleep_manage();
@@ -1676,13 +1696,19 @@ int main(void)
 				{
 					g_event_status |= EVENT_ADV_STOP;
 					g_event_status |= EVENT_BEGIN_WORK;
+                    app_trace_log("adv true %d\n",__LINE__);
 				}
 				else if ((g_status_ble_connect == true)
 					&&(g_status_data_send != true))
 				{
 					g_event_status |= EVENT_BLE_SHUT_CONNECT;
 					g_event_status |= EVENT_BEGIN_WORK;
+                    app_trace_log("connect true %d\n",__LINE__);
 				}
+                else if (battery_get_charege_status() == BATTERY_NOT_CHARGE)
+                {
+                    g_event_status |= EVENT_BEGIN_WORK;
+                }
 			}
 			else
 			{
@@ -1698,7 +1724,9 @@ int main(void)
 					(g_status_adv    != true))
 			{
 				g_event_status |= EVENT_ADV_START;
+                app_trace_log("adv start \n");
 			}
+			g_event_status &= ~(EVENT_KEY_PRESS_LONG);
 		}
         if (g_event_status & EVENT_BEGIN_WORK)
         {//开始工作
@@ -1708,6 +1736,7 @@ int main(void)
 			//初始化角度值
 			g_status_tilt_init_flag = true;
             g_event_status &= ~(EVENT_BEGIN_WORK);
+            app_trace_log("work start \n");
         }
 
         if (g_event_status & EVENT_END_WORK)
@@ -1718,6 +1747,7 @@ int main(void)
 			//初始化角度值
 			g_status_tilt_init_flag = false;
             g_event_status &= ~(EVENT_END_WORK);
+            app_trace_log("work stop \n");
         }
 
         if (g_event_status & EVENT_DATA_SENDING)
@@ -1753,7 +1783,7 @@ int main(void)
 
 		if (g_event_status & EVENT_BLE_SHUT_CONNECT)
 		{//关闭蓝牙连接
-			#if defined(DEBUG_APP)
+			#if !defined(DEBUG_APP)
 			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
 			APP_ERROR_CHECK(err_code);
 			#endif
@@ -1767,11 +1797,13 @@ int main(void)
 			g_status_ble_connect = true;
 			leds_process_init(LED_WORK_BLE_CONNECTED);
 			g_event_status &= ~EVENT_BLE_CONNECTED;
+            app_trace_log("connected \n");
 		}
 		if (g_event_status & EVENT_BLE_DISCONNECTED)
 		{//蓝牙连接断开
 			g_status_ble_connect = false;
 			g_event_status &= ~EVENT_BLE_DISCONNECTED;
+            app_trace_log("disconnected \n");
 		}
 		if (g_event_status & EVENT_DATA_SYNC)
 		{//数据同步
@@ -1781,8 +1813,7 @@ int main(void)
 
         if (g_event_status & EVENT_BATTRY_VALUE)
         {//更新电池电量
-            battery_manager();
-            battery_value = battery_get_value();
+            battery_get_value();
             g_event_status &= ~EVENT_BATTRY_VALUE;
         }
 

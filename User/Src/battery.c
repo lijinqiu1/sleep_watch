@@ -16,7 +16,6 @@ void battery_init(void)
 
 void battery_manager(void)
 {
-    battery_value = adc_start();
     if (!nrf_gpio_pin_read(BQ24040_PG_PIN))
     {
         if(nrf_gpio_pin_read(BQ24040_CHG_PIN))
@@ -40,15 +39,23 @@ void battery_manager(void)
     }
     else
     {
-		if (battery_value < 930)
-		{
-			battery_charge_cur_status = BATTERY_VALUE_LOW;
-			leds_process_init(LED_WORK_POWER_LOW);
-		}
-		else
+//		if (battery_value < BATTER_VALUE_LOW)
+//		{
+//			battery_charge_cur_status = BATTERY_VALUE_LOW;
+//            if (battery_charge_cur_status != battery_charge_last_status)
+//            {
+//                battery_charge_last_status = battery_charge_cur_status;
+//			    leds_process_init(LED_WORK_POWER_LOW);
+//            }
+//		}
+//		else
 		{
         	battery_charge_cur_status = BATTERY_NOT_CHARGE;
-			leds_process_init(LED_IDLE);
+            if (battery_charge_cur_status != battery_charge_last_status)
+            {
+                battery_charge_last_status = battery_charge_cur_status;
+			    leds_process_init(LED_IDLE);
+            }
 		}
     }
 }
@@ -60,5 +67,6 @@ Battery_Charge_Status_e battery_get_charege_status(void)
 
 uint16_t battery_get_value(void)
 {
+    battery_value = adc_start();
 	return battery_value;
 }

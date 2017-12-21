@@ -2,15 +2,15 @@
 #define __LED_H__
 
 
-#define LED_RED                              6                                           /**< LED to indicate advertising state. */
-#define LED_GREEN                            7                                           /**< LED to indicate connected state. */
+#define LED_RED                              7                                           /**< LED to indicate advertising state. */
+#define LED_BLUE                             6                                           /**< LED to indicate connected state. */
 #define LED_FLASH_RATE_ON                 0xff
 #define LED_FLASH_RATE_BREATH             0xfe
 #define LED_FLASH_RATE_1HZ                0xfd
 #define LED_FLASH_RATE_FAST               0xfc
 #define LED_FLASH_RATE_OFF                0xfb
 #define LED_FLASH_LED_RED                 0x01
-#define LED_FLASH_LED_GREEN               0x02
+#define LED_FLASH_LED_BLUE               0x02
 #define LED_FLASH_LED_BOTH                0x03
 #define LED_FLASH_LED_NONE                0x00
 #define LED_FLASH_TIME_LONG               0xff

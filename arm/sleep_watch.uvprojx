@@ -58,7 +58,7 @@
           <ListingPath>..\Listings\</ListingPath>
           <HexFormatSelection>1</HexFormatSelection>
           <Merge32K>0</Merge32K>
-          <CreateBatchFile>0</CreateBatchFile>
+          <CreateBatchFile>1</CreateBatchFile>
           <BeforeCompile>
             <RunUserProg1>0</RunUserProg1>
             <RunUserProg2>0</RunUserProg2>
@@ -334,7 +334,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>BOARD_PCA10001 NRF51,DEBUG_NRF_USER, BLE_STACK_SUPPORT_REQD SPI_MASTER_1_ENABLE ENABLE_DEBUG_LOG_SUPPORT ADV_GENERAL</Define>
+              <Define>BOARD_PCA10001 NRF51,DEBUG_NRF_USER, BLE_STACK_SUPPORT_REQD SPI_MASTER_1_ENABLE ENABLE_DEBUG_LOG_SUPPORT ADV_BOND</Define>
               <Undefine></Undefine>
               <IncludePath>..;..\Include;..\Include\app_common;..\Include\ble;..\Include\ble\ble_services;..\Include\s110;..\Include\sd_common;..\Include\serialization\connectivity;..\Include\ble\device_manager;..\Include\sdk;..\User\Inc</IncludePath>
             </VariousControls>
