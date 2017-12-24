@@ -1177,7 +1177,8 @@ static void period_cycle_process(void * p_context)
 			{//长按超过10s进如恢复出厂设置
 				// On assert, the system can only recover with a reset.
 				//NVIC_SystemReset();
-
+                memset((uint8_t *)&system_params,0xFF,sizeof(system_params_t));
+                system_params_save(&system_params);
 			}
 		}
 		else
