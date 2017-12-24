@@ -1714,7 +1714,7 @@ void LIS3DH_Init(void)
 {
 	SPI_Init();
 	//设置采样率
-	LIS3DH_SetODR(LIS3DH_ODR_100Hz);
+	LIS3DH_SetODR(LIS3DH_ODR_1Hz);
 
 	//设置工作模式
 	LIS3DH_SetMode(LIS3DH_NORMAL);

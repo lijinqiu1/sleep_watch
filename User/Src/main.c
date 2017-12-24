@@ -57,7 +57,7 @@
 
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
 
-#define DEVICE_NAME                     "test"                                     /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "Watch"                                     /**< Name of device. Will be included in the advertising data. */
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
@@ -85,7 +85,7 @@
 
 #define SEC_PARAM_TIMEOUT               30                                          /**< Timeout for Pairing Request or Security Request (in seconds). */
 #define SEC_PARAM_BOND                  1                                           /**< Perform bonding. */
-#define SEC_PARAM_MITM                  1                                           /**< Man In The Middle protection not required. */
+#define SEC_PARAM_MITM                  0                                           /**< Man In The Middle protection not required. */
 #define SEC_PARAM_IO_CAPABILITIES       BLE_GAP_IO_CAPS_DISPLAY_ONLY                /**< No I/O capabilities. */
 #define SEC_PARAM_OOB                   0                                           /**< Out Of Band data not available. */
 #define SEC_PARAM_MIN_KEY_SIZE          7                                           /**< Minimum encryption key size. */
@@ -103,19 +103,19 @@
 //蓝牙拦截配对密码
 #define PAIR_PASS_WORD                  "123456"
 
-#if defined (ADV_GERANL)
+#if defined (ADV_GENERAL)
 static ble_gap_sec_params_t             m_sec_params;                               /**< Security requirements for this application. */
 #endif
 static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
 static ble_nus_t                        m_nus;                                      /**< Structure to identify the Nordic UART Service. */
+#if defined (ADV_WHITELIST) || defined(ADV_BOND)
 static dm_application_instance_t        m_app_handle;                              /**< Application identifier allocated by device manager */
-#if defined (ADV_WHITELIST)
 static dm_handle_t                      m_bonded_peer_handle;                          /**< Device reference handle to the current bonded central. */
 static uint8_t                          m_direct_adv_cnt;                              /**< Counter of direct advertisements. */
 static uint8_t                          m_advertising_mode;                            /**< Variable to keep track of when we are advertising. */
+static ble_gap_addr_t                   m_ble_addr;                                    /**< Variable for getting and setting of BLE device address. */
 #endif
 static bool                             m_memory_access_in_progress = false;        /**< Flag to keep track of ongoing operations on persistent memory. */
-static ble_gap_addr_t                   m_ble_addr;                                    /**< Variable for getting and setting of BLE device address. */
 
 //gpiote user identifier
 static app_gpiote_user_id_t gpiote_user_id;
@@ -284,9 +284,8 @@ static void gap_params_init(void)
     uint32_t                err_code;
     ble_gap_conn_params_t   gap_conn_params;
     ble_gap_conn_sec_mode_t sec_mode;
-#if defined(ADV_WHITELIST) || defined(ADV_BOND)
+
 	ble_opt_t      static_options;
-#endif
 
     BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
 
@@ -304,13 +303,15 @@ static void gap_params_init(void)
 
     err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
     APP_ERROR_CHECK(err_code);
-#if defined(ADV_WHITELIST) || defined(ADV_BOND)
+#if defined (ADV_WHITELIST) || defined(ADV_BOND)
+
 	//初始化蓝牙匹配码功能
 	uint8_t passkey[] = PAIR_PASS_WORD;
 	static_options.gap.passkey.p_passkey = passkey;
 	err_code = sd_ble_opt_set(BLE_GAP_OPT_PASSKEY, &static_options);
 	APP_ERROR_CHECK(err_code);
 #endif
+
 }
 #if defined(ADV_WHITELIST) || defined(ADV_BOND)
 /**@brief Function for initializing the Advertising functionality.
@@ -357,13 +358,13 @@ static void advertising_init(void)
     uint32_t      err_code;
     ble_advdata_t advdata;
     ble_advdata_t scanrsp;
-#if defined(ADV_GENERAL)
+
 	//无限广播模式
-	uint8_t			flags = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
-#else
+	//uint8_t			flags = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
+
 	//广播超时模式
     uint8_t       flags = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;
-#endif
+
     ble_uuid_t adv_uuids[] = {{BLE_UUID_NUS_SERVICE, m_nus.uuid_type}};
 
     memset(&advdata, 0, sizeof(advdata));
@@ -419,7 +420,7 @@ static void services_init(void)
  */
 static void sec_params_init(void)
 {
-#if defined (ADV_GERANL)
+#if defined (ADV_GENERAL)
     m_sec_params.timeout      = SEC_PARAM_TIMEOUT;
     m_sec_params.bond         = SEC_PARAM_BOND;
     m_sec_params.mitm         = SEC_PARAM_MITM;
@@ -527,9 +528,10 @@ static void advertising_start(void)
 
 	if ((whitelist.addr_count != 0) || (whitelist.irk_count != 0))
 	{
-#if 1
 		if (system_params.device_bonded == 0xFF)
 		{
+            err_code = dm_device_delete_all(&m_app_handle);
+ 			APP_ERROR_CHECK(err_code);
             advertising_init(BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE);
 		}
 		else
@@ -538,11 +540,7 @@ static void advertising_start(void)
 			adv_params.p_whitelist = &whitelist;
 			advertising_init(BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED);
 		}
-#endif
 	}
-
-	adv_params.interval = APP_ADV_INTERVAL_FAST;
-	adv_params.timeout	= APP_FAST_ADV_TIMEOUT;
 
     // Start advertising.
     err_code = sd_ble_gap_adv_start(&adv_params);
@@ -684,11 +682,10 @@ static void advertising_start(void)
     adv_params.p_peer_addr = NULL;
     adv_params.fp          = BLE_GAP_ADV_FP_ANY;
     adv_params.interval    = APP_ADV_INTERVAL;
-#if defined(ADV_GENERAL)
-    adv_params.timeout     = 0;//广播超时 三分钟APP_ADV_TIMEOUT_IN_SECONDS
-#else
+
+    //adv_params.timeout     = 0;//广播超时 三分钟APP_ADV_TIMEOUT_IN_SECONDS
+
     adv_params.timeout     = APP_ADV_TIMEOUT_IN_SECONDS;
-#endif
 
     err_code = sd_ble_gap_adv_start(&adv_params);
     APP_ERROR_CHECK(err_code);
@@ -698,6 +695,7 @@ static void advertising_start(void)
  *
  * @param[in]   p_evt   Data associated to the device manager event.
  */
+#if !defined(ADV_GENERAL)
 static uint32_t device_manager_evt_handler(dm_handle_t const    * p_handle,
                                            dm_event_t const     * p_event,
                                            api_result_t           event_result)
@@ -717,15 +715,15 @@ static uint32_t device_manager_evt_handler(dm_handle_t const    * p_handle,
 #else
         case DM_EVT_CONNECTION:
             // Start Security Request timer.
-            if (m_dm_handle.device_id != DM_INVALID_ID)
-            {
+//            if (m_dm_handle.device_id != DM_INVALID_ID)
+//            {
 
-            }
-            else
-			{
+//            }
+//            else
+//			{
 				err_code = app_timer_start(m_sec_req_timer_id, SECURITY_REQUEST_DELAY, NULL);
             	APP_ERROR_CHECK(err_code);
-            }
+//            }
             break;
 #endif
         default:
@@ -733,6 +731,7 @@ static uint32_t device_manager_evt_handler(dm_handle_t const    * p_handle,
     }
     return NRF_SUCCESS;
 }
+#endif
 /**@brief       Function for the Application's S110 SoftDevice event handler.
  *
  * @param[in]   p_ble_evt   S110 SoftDevice event.
@@ -741,7 +740,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
 {
     uint32_t                         err_code;
     static ble_gap_evt_auth_status_t m_auth_status;
-#if defined (ADV_GERANL)
+#if defined (ADV_GENERAL)
     ble_gap_enc_info_t *             p_enc_info;
 #endif
 
@@ -780,7 +779,6 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
 				else
 				{
 					advertising_start();
-//					printf("%d,%s\r\n",__LINE__,__FUNCTION__);
 				}
 			}
 #elif defined (ADV_GENERAL)
@@ -788,74 +786,79 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
             {
 
                 // Configure buttons with sense level low as wakeup source.
-                nrf_gpio_cfg_sense_input(WAKEUP_BUTTON_PIN,
-                                         BUTTON_PULL,
-                                         NRF_GPIO_PIN_SENSE_LOW);
+//                nrf_gpio_cfg_sense_input(WAKEUP_BUTTON_PIN,
+//                                         BUTTON_PULL,
+//                                         NRF_GPIO_PIN_SENSE_LOW);
 
                 // Go to system-off mode (this function will not return; wakeup will cause a reset)
-                err_code = sd_power_system_off();
-                APP_ERROR_CHECK(err_code);
+//                err_code = sd_power_system_off();
+//                APP_ERROR_CHECK(err_code);
             }
 #endif
             break;
-#if defined (ADV_WHITELIST)|| defined(ADV_BOND)
-			case BLE_GAP_EVT_PASSKEY_DISPLAY:
-				// Don't send delayed Security Request if security procedure is already in progress.
-				app_trace_log("%s, %d, passkey:%c%c%c%c%c%c\r\n",__FUNCTION__,__LINE__,p_ble_evt->evt.gap_evt.params.passkey_display.passkey[0],\
-				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[1],\
-				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[2],\
-				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[3],\
-				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[4],\
-				p_ble_evt->evt.gap_evt.params.passkey_display.passkey[5]);
-				break;
-			case BLE_GAP_EVT_AUTH_STATUS:
-				m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
-				if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
-				{
-					app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
-					err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
-					APP_ERROR_CHECK(err_code);
-				}
-				break;
-#elif defined (ADV_GERANL)
-			case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
-				err_code = sd_ble_gap_sec_params_reply(m_conn_handle,
-													   BLE_GAP_SEC_STATUS_SUCCESS,
-													   &m_sec_params);
-				APP_ERROR_CHECK(err_code);
-				break;
+#if defined (ADV_GENERAL)
 
-			case BLE_GATTS_EVT_SYS_ATTR_MISSING:
-				err_code = sd_ble_gatts_sys_attr_set(m_conn_handle, NULL, 0);
-				APP_ERROR_CHECK(err_code);
-				break;
+    	case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
+            err_code = sd_ble_gap_sec_params_reply(m_conn_handle, 
+                                                   BLE_GAP_SEC_STATUS_SUCCESS, 
+                                                   &m_sec_params);
+            APP_ERROR_CHECK(err_code);
+            break;
+            
+        case BLE_GATTS_EVT_SYS_ATTR_MISSING:
+            err_code = sd_ble_gatts_sys_attr_set(m_conn_handle, NULL, 0);
+            APP_ERROR_CHECK(err_code);
+            break;
 
-			case BLE_GAP_EVT_AUTH_STATUS:
-				m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
-				break;
-			case BLE_GAP_EVT_SEC_INFO_REQUEST:
-				p_enc_info = &m_auth_status.periph_keys.enc_info;
-				if (p_enc_info->div == p_ble_evt->evt.gap_evt.params.sec_info_request.div)
-				{
-					err_code = sd_ble_gap_sec_info_reply(m_conn_handle, p_enc_info, NULL);
-					APP_ERROR_CHECK(err_code);
-				}
-				else
-				{
-					// No keys found for this device
-					err_code = sd_ble_gap_sec_info_reply(m_conn_handle, NULL, NULL);
-					APP_ERROR_CHECK(err_code);
-				}
-				break;
+        case BLE_GAP_EVT_AUTH_STATUS:
+            m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
+            break;
+            
+        case BLE_GAP_EVT_SEC_INFO_REQUEST:
+            p_enc_info = &m_auth_status.periph_keys.enc_info;
+            if (p_enc_info->div == p_ble_evt->evt.gap_evt.params.sec_info_request.div)
+            {
+                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, p_enc_info, NULL);
+                APP_ERROR_CHECK(err_code);
+            }
+            else
+            {
+                // No keys found for this device
+                err_code = sd_ble_gap_sec_info_reply(m_conn_handle, NULL, NULL);
+                APP_ERROR_CHECK(err_code);
+            }
+            break;
 
+#elif defined (ADV_WHITELIST) || defined (ADV_BOND)
+            
+        case BLE_GAP_EVT_PASSKEY_DISPLAY:
+            // Don't send delayed Security Request if security procedure is already in progress.
+            app_trace_log("%s, %d, passkey:%c%c%c%c%c%c\r\n",__FUNCTION__,__LINE__,p_ble_evt->evt.gap_evt.params.passkey_display.passkey[0],\
+            p_ble_evt->evt.gap_evt.params.passkey_display.passkey[1],\
+            p_ble_evt->evt.gap_evt.params.passkey_display.passkey[2],\
+            p_ble_evt->evt.gap_evt.params.passkey_display.passkey[3],\
+            p_ble_evt->evt.gap_evt.params.passkey_display.passkey[4],\
+            p_ble_evt->evt.gap_evt.params.passkey_display.passkey[5]);
+            break;
+        case BLE_GAP_EVT_AUTH_STATUS:
+            m_auth_status = p_ble_evt->evt.gap_evt.params.auth_status;
+            if (m_auth_status.auth_status != BLE_GAP_SEC_STATUS_SUCCESS)
+            {
+                app_trace_log("%s %d sd_ble_gap_disconnect\r\n",__FUNCTION__,__LINE__);
+                err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
+                APP_ERROR_CHECK(err_code);
+                g_status_ble_connect = false;
+            }
+            break;
 #endif
 
-			case BLE_GAP_EVT_CONN_SEC_UPDATE:
 
-				break;
-			default:
-				// No implementation needed.
-				break;
+		case BLE_GAP_EVT_CONN_SEC_UPDATE:
+
+			break;
+		default:
+			// No implementation needed.
+			break;
     }
 }
 
@@ -891,7 +894,7 @@ static void on_sys_evt(uint32_t sys_evt)
  */
 static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 {
-#if defined(ADV_WHITELIST)||defined (ADV_BOND)
+#if defined(ADV_WHITELIST) || defined(ADV_BOND)
 	dm_ble_evt_handler(p_ble_evt);
 #endif
     ble_conn_params_on_ble_evt(p_ble_evt);
@@ -947,6 +950,7 @@ static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event
 
 /**@brief Function for the Device Manager initialization.
  */
+#if !defined(ADV_GENERAL)
 static void device_manager_init(void)
 {
     uint32_t                err_code;
@@ -974,7 +978,7 @@ static void device_manager_init(void)
     err_code = dm_register(&m_app_handle, &register_param);
     APP_ERROR_CHECK(err_code);
 }
-
+#endif
 /**@brief  Function for configuring the buttons.
  */
 static void buttons_init(void)
@@ -1090,6 +1094,7 @@ void sleep_manage(void)
 			last_sleep_post = cur_sleep_post = ALARM_SLEEP_POSE_SIX;
 		}
 		cur_timeseconds = TimeSeconds;
+		g_status_tilt_init_flag = false;
 	}
 	else
 	{
@@ -1244,7 +1249,9 @@ static void period_cycle_process(void * p_context)
 
 	if (g_status_alarm_status)
 	{
-		alarm_process();
+		//alarm_process();
+		nrf_gpio_cfg_output(PWM_MOTO_PIN);
+		nrf_gpio_pin_set(PWM_MOTO_PIN);
 	}
 }
 
@@ -1352,18 +1359,22 @@ static float calculateTilt_B(float ax, float ay, float az)
 		Tiltangle = Tiltangle/PI*180;
 		Tiltangle = 90-Tiltangle;
 	}
-	if((az < 0)&&(ay > 0))
+	if((az < 0)&&(ay < 0))
 	{
-		Tiltangle = 180 - Tiltangle;
+		Tiltangle = 90 + Tiltangle;
 	}
-	else if ((az < 0)&&(ay<0))
+	else if ((az > 0)&&(ay < 0))
 	{
-		Tiltangle = 180 + Tiltangle;
+		Tiltangle = 270 - Tiltangle;
 	}
-	else if ((az > 0) && (ay < 0))
+	else if ((az > 0) && (ay > 0))
 	{
-		Tiltangle = 360 - Tiltangle;
+		Tiltangle = 270 + Tiltangle;
 	}
+    else if ((az < 0) && (ay > 0))
+    {
+        Tiltangle = 90 - Tiltangle;
+    }
 
 	return Tiltangle;
 }
@@ -1612,7 +1623,9 @@ int main(void)
     ble_stack_init();
 	  //flash初始化
 	queue_init();
+#if defined (ADV_WHITELIST)||defined(ADV_BOND)
 	device_manager_init();
+#endif
     gap_params_init();
     services_init();
 #if defined (ADV_WHITELIST)||defined(ADV_BOND)
@@ -1650,7 +1663,7 @@ int main(void)
     for (;;)
     {
         //led 管理
-//        leds_process();
+        leds_process();
 		if (g_status_work)
 		{
 			sleep_manage();
@@ -1667,8 +1680,8 @@ int main(void)
 					ax,ay,az);
 				g_cur_Tilt = calculateTilt_B(ax,ay,az);
 				app_trace_log("Tilt = %6f \r\n", g_cur_Tilt);
-//				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
-//					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
+				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
+					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
 			}
 			//存储角度值
 			if (g_event_status & EVENT_TILT_PUSH)
@@ -1695,8 +1708,9 @@ int main(void)
 				if (g_status_adv == true)
 				{
 					g_event_status |= EVENT_ADV_STOP;
-					g_event_status |= EVENT_BEGIN_WORK;
-                    app_trace_log("adv true %d\n",__LINE__);
+                    if(battery_get_charege_status() == BATTERY_NOT_CHARGE)
+					    g_event_status |= EVENT_BEGIN_WORK;
+                    app_trace_log("adv stop %d\n",__LINE__);
 				}
 				else if ((g_status_ble_connect == true)
 					&&(g_status_data_send != true))
@@ -1730,13 +1744,16 @@ int main(void)
 		}
         if (g_event_status & EVENT_BEGIN_WORK)
         {//开始工作
-        	leds_process_init(LED_WORK_BEGIN);
-			// begin to work
-			g_status_work = true;
-			//初始化角度值
-			g_status_tilt_init_flag = true;
+            if (system_params.device_bonded == true)
+            {
+            	leds_process_init(LED_WORK_BEGIN);
+    			// begin to work
+    			g_status_work = true;
+    			//初始化角度值
+    			g_status_tilt_init_flag = true;
+                app_trace_log("work start \n");
+            }
             g_event_status &= ~(EVENT_BEGIN_WORK);
-            app_trace_log("work start \n");
         }
 
         if (g_event_status & EVENT_END_WORK)
@@ -1746,6 +1763,8 @@ int main(void)
 			g_status_work = false;
 			//初始化角度值
 			g_status_tilt_init_flag = false;
+			//数据发送完成同步队列信息
+			g_event_status |= EVENT_DATA_SYNC;
             g_event_status &= ~(EVENT_END_WORK);
             app_trace_log("work stop \n");
         }
@@ -1784,6 +1803,7 @@ int main(void)
 		if (g_event_status & EVENT_BLE_SHUT_CONNECT)
 		{//关闭蓝牙连接
 			#if !defined(DEBUG_APP)
+            
 			err_code = sd_ble_gap_disconnect(m_conn_handle, BLE_HCI_CONN_INTERVAL_UNACCEPTABLE);
 			APP_ERROR_CHECK(err_code);
 			#endif

@@ -16,6 +16,7 @@ void battery_init(void)
 
 void battery_manager(void)
 {
+    /*
     if (!nrf_gpio_pin_read(BQ24040_PG_PIN))
     {
         if(nrf_gpio_pin_read(BQ24040_CHG_PIN))
@@ -58,6 +59,7 @@ void battery_manager(void)
             }
 		}
     }
+    */
 }
 
 Battery_Charge_Status_e battery_get_charege_status(void)

@@ -5,15 +5,18 @@
 #define MAX_SAMPLE_LEVELS (256UL)  /**< Maximum number of sample levels. */
 #define TIMER_PRESCALERS   6U       /**< Prescaler setting for timer. */
 
-#define MOTO_STRONG_ZERO     10
-#define MOTO_STRONG_ONE      64
-#define MOTO_STRONG_TWO      128
-#define MOTO_STRONG_THREE    192
-#define MOTO_STRONG_FULL     250
+#define MOTO_STRONG_ZERO     128
+#define MOTO_STRONG_ONE      96
+#define MOTO_STRONG_TWO      64
+#define MOTO_STRONG_THREE    32
+#define MOTO_STRONG_FULL     16
 
 #define PWM_LED_PIN          12
 #define PWM_MOTO_PIN         29
 
+#define PWM_STATUS_READY     0x00
+#define PWM_LED_MODE         0x01
+#define PWM_MOTO_MODE        0x02
 
 #define DEFAULT_MOTO_STRONG MOTO_LEVEL_AUTO
 
