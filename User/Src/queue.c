@@ -17,6 +17,12 @@ uint16_t current_block_num;
 //队列信息缓存
 //queue_items_t queue_items_buff[QUEUE_BLOCK_ITEMS_COUNT];
 queue_status_t queue_status = QUEUE_STATUS_UPDATE_READY;
+
+//存储接受报文信息
+uint8_t queue_message_data[10][20];
+uint8_t queue_message_entries;
+uint8_t queue_message_tx;
+uint8_t queue_message_rx;
 //*************************flash存储*******************************
 //修改PSTORAGE_DATA_START_ADDR宏定义，划分出8k用于存储flash数据?
 
@@ -189,7 +195,7 @@ RETRY:
 	queue_status = QUEUE_STATUS_LOADING;
 	pstorage_load((uint8_t*)item, &dest_block_id, QUEUE_ITEM_SIZE,offset);
 	while(queue_status == QUEUE_STATUS_LOADING);
-	if (queue_status != QUEUE_STATUS_LOAD_SUCCESS)
+	if (queue_status != QUEUE_STATUS_UPDATE_READY)
 	{//如果存储失败调至下一个扇区
 		queue_entries.rx_point ++;
 		if (queue_entries.rx_point % QUEUE_ENTRIES_NUM == 0)
@@ -256,5 +262,51 @@ uint8_t queue_is_full(void)
 	{//队列满
 		return 1;
 	}
+}
+
+void queue_message_init(void)
+{
+    queue_message_rx = 0;
+    queue_message_tx = 0;
+    queue_message_entries = 0;
+}
+
+void queue_message_push(uint8_t *message)
+{
+    memcpy(queue_message_data[queue_message_tx],message,20);
+    queue_message_tx++;
+    if (queue_message_tx == 10)
+    {
+        queue_message_tx = 0;
+    }
+    if(queue_message_entries != 10)
+    {
+        queue_message_entries ++;
+    }
+    else
+    {
+        queue_message_rx++;
+        if (queue_message_rx == 10)
+        {
+            queue_message_rx = 0;
+        }
+    }
+    
+}
+
+uint8_t queue_message_pop(uint8_t *message)
+{
+    if (queue_message_entries == 0)
+    {
+        return 1;
+    }
+    memcpy(queue_message_data[queue_message_rx],message,20);
+    queue_message_rx++;
+    if (queue_message_rx == 10)
+    {
+        queue_message_rx = 0;
+    }
+    queue_message_entries--;
+    return 0;
 }
 

@@ -53,6 +53,8 @@
 #include "battery.h"
 #include "main.h"
 
+#define SOFT_VERSION     20171226-1
+
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
@@ -144,7 +146,7 @@ static bool g_status_bond_info_received = false;                                
 static bool g_status_tilt_init_flag = false;                                    //角度值初始化
 static float g_cur_Tilt;                                                        //当前倾角变化值
 static uint8_t rec_data_buffer[20];                                             //缓存接收到的数据
-
+static uint8_t rec_data_length;
 
 typedef enum
 {
@@ -390,10 +392,18 @@ static void advertising_init(void)
 /**@snippet [Handling the data received over BLE] */
 void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t length)
 {
+    uint8_t i;
+    for(i = 0; i < length;i++)
+    {
+        app_trace_log("%02x ",p_data[i]);
+    }
+    app_trace_log("\n");
 	app_trace_log("%s,%d,length:%d\r\n",__FUNCTION__,__LINE__,length);
 	if ((p_data[0] == 0xA5) && (p_data[length - 1] == 0x80))
 	{
-		memcpy(rec_data_buffer,p_data,length);
+		//memcpy(rec_data_buffer,p_data,length);
+        //rec_data_length = length;
+        queue_message_push(p_data);
 		g_event_status |= EVENT_MESSAGE_RECEIVED;
 	}
 }
@@ -1622,8 +1632,10 @@ int main(void)
     timers_init();
     app_trace_init();
     ble_stack_init();
-	  //flash初始化
+	//flash初始化
 	queue_init();
+    //通信报文缓存队列
+    queue_message_init();
 #if defined (ADV_WHITELIST)||defined(ADV_BOND)
 	device_manager_init();
 #endif
@@ -1779,8 +1791,15 @@ int main(void)
 
 		if (g_event_status & EVENT_MESSAGE_RECEIVED)
 		{//有数据接收
+		    if (queue_message_pop(rec_data_buffer))
+		    {
+			    g_event_status &= ~(EVENT_MESSAGE_RECEIVED);
+            }
+		    if (rec_data_buffer[2] == 0x02)
+		    {
+                app_trace_log("begin send data\n");
+            }
 			message_process(rec_data_buffer);
-			g_event_status &= ~(EVENT_MESSAGE_RECEIVED);
 		}
 
 		if (g_event_status & EVENT_ADV_START)
@@ -1866,6 +1885,7 @@ int main(void)
 			        }
 					//数据发送完成同步队列信息
 					g_event_status |= EVENT_DATA_SYNC;
+                    app_trace_log("data send end\n");
 				}
 				else
 				{
@@ -1886,6 +1906,7 @@ int main(void)
 			        {
 			            err_code = ble_nus_send_string(&m_nus, data_array, 12);
 			        }
+                    app_trace_log("data sending\n");
 				}
 			}
 			else

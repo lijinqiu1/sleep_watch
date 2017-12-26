@@ -76,6 +76,8 @@ uint16_t queue_get_entries(void);
 void system_params_save(system_params_t * params);
 void queue_sync(void);
 uint8_t queue_is_full(void);
-
+void queue_message_init(void);
+uint8_t queue_message_pop(uint8_t *message);
+void queue_message_push(uint8_t * message);
 
 #endif
