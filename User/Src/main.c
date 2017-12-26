@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 
-#define SOFT_VERSION     20171226-1
+#define SOFT_VERSION     20171226-2
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -1795,11 +1795,14 @@ int main(void)
 		    {
 			    g_event_status &= ~(EVENT_MESSAGE_RECEIVED);
             }
+			else
+			{
+				message_process(rec_data_buffer);
+			}
 		    if (rec_data_buffer[2] == 0x02)
 		    {
                 app_trace_log("begin send data\n");
             }
-			message_process(rec_data_buffer);
 		}
 
 		if (g_event_status & EVENT_ADV_START)

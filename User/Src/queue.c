@@ -300,7 +300,7 @@ uint8_t queue_message_pop(uint8_t *message)
     {
         return 1;
     }
-    memcpy(queue_message_data[queue_message_rx],message,20);
+    memcpy(message,queue_message_data[queue_message_rx],20);
     queue_message_rx++;
     if (queue_message_rx == 10)
     {
