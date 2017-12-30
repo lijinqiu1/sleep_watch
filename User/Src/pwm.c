@@ -15,7 +15,7 @@ static uint8_t moto_strong_index = 0;
 static uint8_t moto_time = 0; //记录震动时长
 static uint8_t moto_count = 0; //记录震动次数
 
-#define USB_ONLY_ONE_TIMER
+//#define USB_ONLY_ONE_TIMER
 
 /** @brief Function for handling timer 2 peripheral interrupts.
  */

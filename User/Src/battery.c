@@ -21,25 +21,19 @@ void battery_manager(void)
         if(nrf_gpio_pin_read(BQ24040_CHG_PIN))
         {//割窮嶄
             battery_charge_cur_status = BATTERY_CHARGING;
-            if (battery_charge_cur_status != battery_charge_last_status)
-            {
-                battery_charge_last_status = battery_charge_cur_status;
-				leds_process_init(LED_WORK_POWER_CHARGING);
-            }
+            battery_charge_last_status = battery_charge_cur_status;
+			leds_process_init(LED_WORK_POWER_CHARGING);
         }
         else
         {//割窮頼撹
             battery_charge_cur_status = BATTERY_CHARGE_COMPLETE;
-            if (battery_charge_cur_status != battery_charge_last_status)
-            {
-                battery_charge_last_status = battery_charge_cur_status;
-				leds_process_init(LED_WORK_POWER_CHARGE_COMPLETE);
-            }
+            battery_charge_last_status = battery_charge_cur_status;
+			leds_process_init(LED_WORK_POWER_CHARGE_COMPLETE);
         }
     }
     else
     {
-//		if (battery_value < BATTER_VALUE_LOW)
+//		if (battery_va，，，，，，，，，，，，，，，，，，，，，，，，，，，，，lue < BATTER_VALUE_LOW)
 //		{
 //			battery_charge_cur_status = BATTERY_VALUE_LOW;
 //            if (battery_charge_cur_status != battery_charge_last_status)

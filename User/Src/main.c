@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 
-#define SOFT_VERSION     20171226-2
+#define SOFT_VERSION     20171230-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -1153,7 +1153,11 @@ void sleep_manage(void)
 		}
 		else if(last_sleep_post != cur_sleep_post)
 		{//睡姿变换报警取消
-			g_status_alarm_status = false;
+		    if (g_status_alarm_status)
+		    {
+			    g_status_alarm_status = false;
+				alarm_case();
+		    }
 			last_sleep_post = cur_sleep_post;
 			cur_timeseconds = TimeSeconds;
 		}
@@ -1260,9 +1264,9 @@ static void period_cycle_process(void * p_context)
 
 	if (g_status_alarm_status)
 	{
-		//alarm_process();
-		nrf_gpio_cfg_output(PWM_MOTO_PIN);
-		nrf_gpio_pin_set(PWM_MOTO_PIN);
+		alarm_process();
+//		nrf_gpio_cfg_output(PWM_MOTO_PIN);
+//		nrf_gpio_pin_set(PWM_MOTO_PIN);
 	}
 }
 
@@ -1475,8 +1479,7 @@ static void message_process(uint8_t *ch)
 	case CMD_SET_ALARM:
 		//设置干涉条件
 		//干涉条件有6个
-		system_params.time[0] = ch[4];
-		memcpy(system_params.time,&ch[4],0x06);
+		memcpy(system_params.time,&ch[3],0x06);
 		//发送响应报文
 		data_array[0] = 0xA5;
 		data_array[1] = 0x01;
@@ -1776,6 +1779,11 @@ int main(void)
 			g_status_work = false;
 			//初始化角度值
 			g_status_tilt_init_flag = false;
+            if (g_status_alarm_status)
+            {
+                g_status_alarm_status = false;
+				alarm_case();
+            }
 			//数据发送完成同步队列信息
 			g_event_status |= EVENT_DATA_SYNC;
             g_event_status &= ~(EVENT_END_WORK);
@@ -1798,11 +1806,11 @@ int main(void)
 			else
 			{
 				message_process(rec_data_buffer);
+    		    if (rec_data_buffer[2] == 0x02)
+    		    {
+                    app_trace_log("begin send data\n");
+                }
 			}
-		    if (rec_data_buffer[2] == 0x02)
-		    {
-                app_trace_log("begin send data\n");
-            }
 		}
 
 		if (g_event_status & EVENT_ADV_START)
