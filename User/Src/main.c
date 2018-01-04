@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 
-#define SOFT_VERSION     20171230-1
+#define SOFT_VERSION     20180104-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
