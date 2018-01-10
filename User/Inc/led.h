@@ -42,6 +42,8 @@ typedef enum LED_WORK_STATUS
 void leds_init(void);
 void leds_process_init(Led_Work_Status_t status);
 void leds_process(void);
+Led_Work_Status_t leds_get_cur_status(void);
+
 
 #endif
 

@@ -229,3 +229,8 @@ void leds_process(void)
     }
 }
 
+Led_Work_Status_t leds_get_cur_status(void)
+{
+    return cur_led_status;
+}
+

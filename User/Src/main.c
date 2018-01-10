@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 
-#define SOFT_VERSION     20180104-1
+#define SOFT_VERSION     20180110-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -993,6 +993,7 @@ static void device_manager_init(void)
  */
 static void buttons_init(void)
 {
+#if 0
 	uint32_t low_to_high_bitmask = (uint32_t)(1 << BUTTON_1);
 	uint32_t high_to_low_bitmask = (uint32_t)(1 << BUTTON_1);
 	uint32_t err_code;
@@ -1010,6 +1011,9 @@ static void buttons_init(void)
 
 	err_code = app_gpiote_user_enable(gpiote_user_id);
 	APP_ERROR_CHECK(err_code);
+#else
+    nrf_gpio_cfg_input(BUTTON_1, NRF_GPIO_PIN_NOPULL);
+#endif
 }
 
 
@@ -1180,13 +1184,13 @@ static void period_cycle_process(void * p_context)
 
 
 	//按键处理
-	if (g_status_key_pressed == 1)
+	//if (g_status_key_pressed == 1)
 	{
 		key_status = nrf_gpio_pin_read(BUTTON_1);
 		if (key_status == 0)
 		{
 			key_timer ++;
-
+            g_status_key_pressed = true;
 			if(key_timer > 10)
 			{//长按超过10s进如恢复出厂设置
 				// On assert, the system can only recover with a reset.
@@ -1195,25 +1199,25 @@ static void period_cycle_process(void * p_context)
                 system_params_save(&system_params);
 			}
 		}
-		else
+		else if (g_status_key_pressed == true)
 		{
-			g_status_key_pressed = 0;
-			if(key_timer < 2)
-			{
-				//短按
-				g_event_status |= EVENT_KEY_PRESS_SHOT;
-			}
-			else
+			g_status_key_pressed = false;
+			if(key_timer > 6)
 			{
 				//长按
 				g_event_status |= EVENT_KEY_PRESS_LONG;
+			}
+			else
+			{
+				//短按
+				g_event_status |= EVENT_KEY_PRESS_SHOT;
 			}
 			key_timer = 0;
 		}
 	}
 
 
-	if ((g_status_work == true)&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE))
+	if ((g_status_work == true)/*&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE)*/)
 	{//使用三轴加速度采样
 		lis3dh_timer = 0;
 		if (angle_timer++ >= (ANGLE_SMAPLE_RATE-1))
@@ -1774,6 +1778,10 @@ int main(void)
 
         if (g_event_status & EVENT_END_WORK)
         {//停止工作
+            if (leds_get_cur_status() == LED_WORK_BEGIN)
+            {
+                leds_process_init(LED_IDLE);
+            }
             leds_process_init(LED_WORK_END);
 			// stop work
 			g_status_work = false;

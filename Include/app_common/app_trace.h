@@ -44,7 +44,7 @@ void app_trace_dump(uint8_t * p_buffer, uint32_t len);
 
 #else // ENABLE_DEBUG_LOG_SUPPORT
 
-#define app_trace_init(...)
+ #define app_trace_init(...)
 #define app_trace_log(...)
 #define app_trace_dump(...)
 
