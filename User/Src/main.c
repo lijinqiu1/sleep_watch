@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 
-#define SOFT_VERSION     20180110-1
+#define SOFT_VERSION     20180111-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -1202,7 +1202,7 @@ static void period_cycle_process(void * p_context)
 		else if (g_status_key_pressed == true)
 		{
 			g_status_key_pressed = false;
-			if(key_timer > 6)
+			if(key_timer >= 4)
 			{
 				//³¤°´
 				g_event_status |= EVENT_KEY_PRESS_LONG;
@@ -1934,6 +1934,7 @@ int main(void)
 			}
 		}
         power_manage();
+//        nrf_gpio_pin_toggle(LED_RED);
     }
 }
 
