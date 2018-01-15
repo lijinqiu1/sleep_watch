@@ -146,7 +146,7 @@ static bool g_status_bond_info_received = false;                                
 static bool g_status_tilt_init_flag = false;                                    //角度值初始化
 static float g_cur_Tilt;                                                        //当前倾角变化值
 static uint8_t rec_data_buffer[20];                                             //缓存接收到的数据
-static uint8_t rec_data_length;
+//static uint8_t rec_data_length;
 
 typedef enum
 {
@@ -287,8 +287,6 @@ static void gap_params_init(void)
     ble_gap_conn_params_t   gap_conn_params;
     ble_gap_conn_sec_mode_t sec_mode;
 
-	ble_opt_t      static_options;
-
     BLE_GAP_CONN_SEC_MODE_SET_OPEN(&sec_mode);
 
     err_code = sd_ble_gap_device_name_set(&sec_mode,
@@ -306,7 +304,7 @@ static void gap_params_init(void)
     err_code = sd_ble_gap_ppcp_set(&gap_conn_params);
     APP_ERROR_CHECK(err_code);
 #if defined (ADV_WHITELIST) || defined(ADV_BOND)
-
+	ble_opt_t      static_options;
 	//初始化蓝牙匹配码功能
 	uint8_t passkey[] = PAIR_PASS_WORD;
 	static_options.gap.passkey.p_passkey = passkey;
@@ -1172,7 +1170,7 @@ void sleep_manage(void)
 //周期事件处理函数
 static void period_cycle_process(void * p_context)
 {
-	static uint32_t lis3dh_timer = 0;//三轴传感器采样频率
+//	static uint32_t lis3dh_timer = 0;//三轴传感器采样频率
 	static uint8_t key_timer = 0;	//按键计时器
 	uint8_t key_status;             //按键状态
 	static uint16_t angle_timer = 0;	//角度采样频率
@@ -1202,7 +1200,7 @@ static void period_cycle_process(void * p_context)
 		else if (g_status_key_pressed == true)
 		{
 			g_status_key_pressed = false;
-			if(key_timer >= 4)
+			if(key_timer >= 3)
 			{
 				//长按
 				g_event_status |= EVENT_KEY_PRESS_LONG;
@@ -1219,7 +1217,7 @@ static void period_cycle_process(void * p_context)
 
 	if ((g_status_work == true)/*&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE)*/)
 	{//使用三轴加速度采样
-		lis3dh_timer = 0;
+//		lis3dh_timer = 0;
 		if (angle_timer++ >= (ANGLE_SMAPLE_RATE-1))
 		{
 			angle_timer = 0;
@@ -1272,6 +1270,8 @@ static void period_cycle_process(void * p_context)
 //		nrf_gpio_cfg_output(PWM_MOTO_PIN);
 //		nrf_gpio_pin_set(PWM_MOTO_PIN);
 	}
+    //led 管理
+    leds_process();
 }
 
 //*****************倾角计算**************************
@@ -1682,8 +1682,6 @@ int main(void)
     // Enter main loop
     for (;;)
     {
-        //led 管理
-        leds_process();
 		if (g_status_work)
 		{
 			sleep_manage();
@@ -1778,10 +1776,6 @@ int main(void)
 
         if (g_event_status & EVENT_END_WORK)
         {//停止工作
-            if (leds_get_cur_status() == LED_WORK_BEGIN)
-            {
-                leds_process_init(LED_IDLE);
-            }
             leds_process_init(LED_WORK_END);
 			// stop work
 			g_status_work = false;
@@ -1801,7 +1795,7 @@ int main(void)
         if (g_event_status & EVENT_DATA_SENDING)
         {//开始发送数据
     		g_status_data_send = true;
-            leds_process_init(LED_WORK_BLE_DATA_TRAING);
+            leds_process_init(LED_WORK_BLE_DATA_SENDING);
             g_event_status &= ~(EVENT_DATA_SENDING);
         }
 
@@ -1890,7 +1884,7 @@ int main(void)
 				{
 					//发送完成
 					g_status_data_send = false;
-                    leds_process_init(LED_IDLE);
+                    leds_process_cancel();
 					g_event_status |= EVENT_DATA_SENDED;
 					//发送传输完成报文
 					data_array[0] = 0xA5;
@@ -1925,6 +1919,7 @@ int main(void)
 			        {
 			            err_code = ble_nus_send_string(&m_nus, data_array, 12);
 			        }
+                    leds_process_flash_fast();
                     app_trace_log("data sending\n");
 				}
 			}

@@ -117,6 +117,11 @@
       <TargetDriverDllRegistry>
         <SetRegEntry>
           <Number>0</Number>
+          <Key>DLGUARM</Key>
+          <Name>D耧</Name>
+        </SetRegEntry>
+        <SetRegEntry>
+          <Number>0</Number>
           <Key>ARMRTXEVENTFLAGS</Key>
           <Name>-L70 -Z18 -C0 -M0 -T1</Name>
         </SetRegEntry>
@@ -145,18 +150,18 @@
         <Bp>
           <Number>0</Number>
           <Type>0</Type>
-          <LineNumber>33</LineNumber>
+          <LineNumber>1726</LineNumber>
           <EnabledFlag>1</EnabledFlag>
-          <Address>104342</Address>
+          <Address>94510</Address>
           <ByteObject>0</ByteObject>
           <HtxType>0</HtxType>
           <ManyObjects>0</ManyObjects>
           <SizeOfObject>0</SizeOfObject>
           <BreakByAccess>0</BreakByAccess>
           <BreakIfRCount>1</BreakIfRCount>
-          <Filename>..\User\Src\battery.c</Filename>
+          <Filename>..\User\Src\main.c</Filename>
           <ExecCommand></ExecCommand>
-          <Expression>\\sleep_watch\../User/Src/battery.c\33</Expression>
+          <Expression>\\sleep_watch\../User/Src/main.c\1726</Expression>
         </Bp>
       </Breakpoint>
       <WatchWindow1>

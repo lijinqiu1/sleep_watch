@@ -19,9 +19,9 @@ void battery_manager(void)
 {
     if (!nrf_gpio_pin_read(BQ24040_PG_PIN))
     {
-        nrf_gpio_cfg_output(BQ24040_CHG_PIN);
-        nrf_gpio_pin_set(BQ24040_CHG_PIN);
-        nrf_gpio_cfg_input(BQ24040_CHG_PIN, NRF_GPIO_PIN_PULLUP);
+//        nrf_gpio_cfg_output(BQ24040_CHG_PIN);
+//        nrf_gpio_pin_set(BQ24040_CHG_PIN);
+//        nrf_gpio_cfg_input(BQ24040_CHG_PIN, NRF_GPIO_PIN_PULLUP);
         if(!nrf_gpio_pin_read(BQ24040_CHG_PIN))
         {//≥‰µÁ÷–
             battery_charge_cur_status = BATTERY_CHARGING;
@@ -52,7 +52,7 @@ void battery_manager(void)
             if (battery_charge_cur_status != battery_charge_last_status)
             {
                 battery_charge_last_status = battery_charge_cur_status;
-			    leds_process_init(LED_IDLE);
+			    leds_process_cancel();
             }
 		}
     }
