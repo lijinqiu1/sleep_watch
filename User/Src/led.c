@@ -268,6 +268,12 @@ void leds_process_init(Led_Work_Status_t status)
                 pwm_led_start(LED_BLUE);
             }
         }
+		else
+		{
+			pwm_led_stop();
+			nrf_gpio_pin_set(LED_BLUE);
+			nrf_gpio_pin_set(LED_RED);
+		}
     }
     else if (status == LED_WORK_END && cur_led_status == LED_WORK_BEGIN)
     {
@@ -343,9 +349,9 @@ void leds_process(void)
         {
             if (cur_led_flash_method.flash_period == LED_FLASH_PERIOD_ONE_SHOT)
             {//led…¡À∏Ω· ¯
+                pwm_led_stop();
                 nrf_gpio_pin_set(LED_BLUE);
                 nrf_gpio_pin_set(LED_RED);
-                pwm_led_stop();
                 cur_led_status = LED_WORK_IDLE;
             }
             else if(cur_led_flash_method.flash_period -- == 0)
