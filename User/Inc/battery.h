@@ -4,12 +4,12 @@
 #define BQ24040_PG_PIN      11
 #define BQ24040_CHG_PIN     12
 
-#define BATTER_VALUE_LOW    768
-#define BATTER_VALUE_20     794
-#define BATTER_VALUE_40     820
-#define BATTER_VALUE_60     845
-#define BATTER_VALUE_80     870
-#define BATTER_VALUE_100    880
+#define BATTER_VALUE_LOW    255
+#define BATTER_VALUE_20     260
+#define BATTER_VALUE_40     265
+#define BATTER_VALUE_60     270
+#define BATTER_VALUE_80     280
+#define BATTER_VALUE_100    289
 
 typedef enum BATTERY_CHARGE_STATUS
 {

@@ -368,6 +368,7 @@ static void pwm_moto_deinit(void)
 	sd_ppi_channel_enable_clr((PPI_CHEN_CH3_Enabled << PPI_CHEN_CH3_Pos)
                     | (PPI_CHEN_CH4_Enabled << PPI_CHEN_CH4_Pos)
                     | (PPI_CHEN_CH5_Enabled << PPI_CHEN_CH5_Pos));
+    nrf_gpio_cfg_output(PWM_MOTO_PIN);
 	nrf_gpio_pin_clear(PWM_MOTO_PIN);
 }
 #endif

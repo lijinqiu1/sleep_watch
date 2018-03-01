@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 
-#define SOFT_VERSION     20180111-1
+#define SOFT_VERSION     20180205-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -1548,6 +1548,7 @@ static void message_process(uint8_t *ch)
 		data_array[0] = 0xA5;
 		data_array[1] = 0x02;
 		data_array[2] = CMD_GET_BATTERY;
+        battery = battery_get_value();
         if(battery < BATTER_VALUE_20)
         {
             data_array[3] = 0;
