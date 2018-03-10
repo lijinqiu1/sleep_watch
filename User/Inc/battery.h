@@ -9,7 +9,7 @@
 #define BATTER_VALUE_40     265
 #define BATTER_VALUE_60     270
 #define BATTER_VALUE_80     280
-#define BATTER_VALUE_100    289
+#define BATTER_VALUE_100    295
 
 typedef enum BATTERY_CHARGE_STATUS
 {

@@ -22,14 +22,15 @@ static Led_Flash_Method_t cur_led_flash_method = {
 //static uint32_t last_led_work_status = 0;
 
 const Led_Flash_Method_t led_flash_method[LED_WORK_MAX] = {
-{                  0,                     0,LED_FLASH_PERIOD_ONE_SHOT,                 0,0},//usb disconnect
+{                     0,                  0,LED_FLASH_PERIOD_ONE_SHOT,                 0,0},//usb disconnect
 {     LED_FLASH_RATE_ON,LED_FLASH_TIME_LONG,LED_FLASH_PERIOD_ONE_SHOT,LED_FLASH_LED_BLUE,0},//charge complete
 { LED_FLASH_RATE_BREATH,LED_FLASH_TIME_LONG,LED_FLASH_PERIOD_ONE_SHOT,LED_FLASH_LED_BLUE,0},//charging
 {    LED_FLASH_RATE_1HZ,LED_FLASH_TIME_LONG,LED_FLASH_PERIOD_ONE_SHOT, LED_FLASH_LED_RED,0},//power low
 {    LED_FLASH_RATE_1HZ,                 10,                       30,LED_FLASH_LED_BOTH,0},//data full
 {   LED_FLASH_RATE_FAST,                  5,LED_FLASH_PERIOD_ONE_SHOT, LED_FLASH_LED_RED,0},//data send error
 {   LED_FLASH_RATE_FAST,LED_FLASH_TIME_LONG,LED_FLASH_PERIOD_ONE_SHOT,LED_FLASH_LED_BLUE,0},//data sending
-{    LED_FLASH_RATE_1HZ,                  5,LED_FLASH_PERIOD_ONE_SHOT,LED_FLASH_LED_BLUE,0},//ble connected
+{     LED_FLASH_RATE_ON,                  5,LED_FLASH_PERIOD_ONE_SHOT, LED_FLASH_LED_RED,0},//ble connected
+{    LED_FLASH_RATE_1HZ,                  5,LED_FLASH_PERIOD_ONE_SHOT,LED_FLASH_LED_BLUE,0},//adv start
 {    LED_FLASH_RATE_1HZ,                 10,LED_FLASH_PERIOD_ONE_SHOT,LED_FLASH_LED_BLUE,0},//work begin
 {    LED_FLASH_RATE_1HZ,                 10,LED_FLASH_PERIOD_ONE_SHOT, LED_FLASH_LED_RED,0},//work end
 {                     0,                  0,LED_FLASH_PERIOD_ONE_SHOT,                 0,0},//led idle
@@ -95,6 +96,13 @@ void leds_process_init(Led_Work_Status_t status)
         led_flash_method.flash_period = 0;
         begin_TimeSeconds = TimeSeconds;
         break;
+	case LED_WORK_BLE_ADV:
+        led_flash_method.flash_rate = LED_FLASH_RATE_1HZ;
+        led_flash_method.flash_time = 10;
+        led_flash_method.flash_led = LED_FLASH_LED_BLUE;
+        led_flash_method.flash_period = 0;
+        begin_TimeSeconds = TimeSeconds;
+		break;
 	case LED_WORK_DATA_FULL:
         led_flash_method.flash_rate = LED_FLASH_RATE_1HZ;
         led_flash_method.flash_time = 10;

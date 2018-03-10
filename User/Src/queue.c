@@ -228,6 +228,7 @@ RETRY:
 void queue_sync(void)
 {
 	pstorage_handle_t dest_block_id;
+    
 	//队列信息保存
 	pstorage_block_identifier_get(&block_id, 0, &dest_block_id);
 	pstorage_update(&dest_block_id,(uint8_t *)&queue_entries,QUEUE_STATUS_SIZE,QUEUE_STATUS_ADDRESS);

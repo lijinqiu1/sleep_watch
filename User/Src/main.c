@@ -53,16 +53,16 @@
 #include "battery.h"
 #include "main.h"
 
-#define SOFT_VERSION     20180205-1
+#define SOFT_VERSION     20180310-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
 
-#define DEVICE_NAME                     "Watch"                                     /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "Pregn"                                     /**< Name of device. Will be included in the advertising data. */
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
-#define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
+#define APP_ADV_TIMEOUT_IN_SECONDS      30                                         /**< The advertising timeout (in units of seconds). */
 
 #define APP_ADV_INTERVAL_FAST            MSEC_TO_UNITS(25, UNIT_0_625_MS)               /**< Fast advertising interval (25 ms.). */
 #define APP_ADV_INTERVAL_SLOW            MSEC_TO_UNITS(2000, UNIT_0_625_MS)             /**< Slow advertising interval (2 seconds). */
@@ -240,7 +240,33 @@ static void sec_req_timeout_handler(void * p_context)
 
 static void key_req_timeout_handler(void * p_context)
 {
-
+    static uint16_t key_count = 0;
+    if (nrf_gpio_pin_read(BUTTON_1) == 0)
+    {
+        key_count ++;
+        app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
+    }
+    else
+    {
+        if (key_count >= 30)
+        {//进入dfu模式
+            NVIC_SystemReset();
+        }
+        else if (key_count >= 15)
+        {//恢复出厂设置
+            memset((uint8_t *)&system_params,0xFF,sizeof(system_params_t));
+            system_params_save(&system_params);
+        }
+        else if (key_count >= 5)
+        {
+            g_event_status |= EVENT_KEY_PRESS_LONG;
+        }
+        else
+        {
+            g_event_status |= EVENT_KEY_PRESS_SHOT;
+        }
+        key_count = 0;
+    }
 }
 
 
@@ -801,6 +827,7 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
                 // Go to system-off mode (this function will not return; wakeup will cause a reset)
 //                err_code = sd_power_system_off();
 //                APP_ERROR_CHECK(err_code);
+                g_status_adv = false;
             }
 #endif
             break;
@@ -945,12 +972,15 @@ static void gpiote_event_handler(uint32_t event_pins_low_to_high, uint32_t event
 {
 	if (event_pins_high_to_low & (uint32_t)(1<<BUTTON_1))
 	{
+        /*
 		if (g_status_data_send == false) {
 			//数据传输功能时按键无效
 			//button 1 pressed
 			g_status_key_pressed = true;
-			//app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(2000,APP_TIMER_PRESCALER),NULL);
+			
 		}
+		*/
+        app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(100,APP_TIMER_PRESCALER),NULL);
 	}
 }
 
@@ -991,7 +1021,7 @@ static void device_manager_init(void)
  */
 static void buttons_init(void)
 {
-#if 0
+#if 1
 	uint32_t low_to_high_bitmask = (uint32_t)(1 << BUTTON_1);
 	uint32_t high_to_low_bitmask = (uint32_t)(1 << BUTTON_1);
 	uint32_t err_code;
@@ -1182,7 +1212,8 @@ static void period_cycle_process(void * p_context)
 
 
 	//按键处理
-	//if (g_status_key_pressed == 1)
+	/*
+	if (g_status_key_pressed == 1)
 	{
 		key_status = nrf_gpio_pin_read(BUTTON_1);
 		if (key_status == 0)
@@ -1190,11 +1221,11 @@ static void period_cycle_process(void * p_context)
 			key_timer ++;
             g_status_key_pressed = true;
 			if(key_timer > 10)
-			{//长按超过10s进如恢复出厂设置
+			{//长按超过15s进如恢复出厂设置
 				// On assert, the system can only recover with a reset.
-				//NVIC_SystemReset();
-                memset((uint8_t *)&system_params,0xFF,sizeof(system_params_t));
-                system_params_save(&system_params);
+				NVIC_SystemReset();
+                //memset((uint8_t *)&system_params,0xFF,sizeof(system_params_t));
+                //system_params_save(&system_params);
 			}
 		}
 		else if (g_status_key_pressed == true)
@@ -1213,7 +1244,7 @@ static void period_cycle_process(void * p_context)
 			key_timer = 0;
 		}
 	}
-
+    */
 
 	if ((g_status_work == true)/*&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE)*/)
 	{//使用三轴加速度采样
@@ -1625,6 +1656,36 @@ void queue_test(void)
 
 }
 #endif
+
+#define RELOAD_COUNT (32768*3-1)    //3 s
+
+void WDT_Init(void)
+{
+    //配置WDT.
+    NRF_WDT->TASKS_START = 0;  
+    NRF_WDT->CRV = RELOAD_COUNT;  
+    NRF_WDT->CONFIG =  
+    WDT_CONFIG_HALT_Pause << WDT_CONFIG_HALT_Pos |  
+    WDT_CONFIG_SLEEP_Pause << WDT_CONFIG_SLEEP_Pos;  
+    NRF_WDT->RREN = WDT_RREN_RR0_Enabled << WDT_RREN_RR0_Pos;  
+}
+
+void wdt_start(void)  
+{  
+    NRF_WDT->TASKS_START = 1;  
+}  
+  
+void wdt_feed(void)  
+{  
+    if(NRF_WDT->RUNSTATUS & WDT_RUNSTATUS_RUNSTATUS_Msk)  
+        NRF_WDT->RR[0] = WDT_RR_RR_Reload;  
+}  
+  
+void wdt_stop(void)  
+{  
+    NRF_WDT->TASKS_START = 0;  
+}  
+
 /**@brief  Application main function.
  */
 int main(void)
@@ -1638,6 +1699,8 @@ int main(void)
     uint8_t data_array[20];
     uint32_t err_code;
     timers_init();
+    WDT_Init();
+    wdt_start();
     app_trace_init();
     ble_stack_init();
 	//flash初始化
@@ -1683,6 +1746,7 @@ int main(void)
     // Enter main loop
     for (;;)
     {
+        wdt_feed();
 		if (g_status_work)
 		{
 			sleep_manage();
@@ -1821,6 +1885,7 @@ int main(void)
 			if ((g_status_work != true) && (g_status_adv!= true))
 			{
 				advertising_start();
+				leds_process_init(LED_WORK_BLE_ADV);
 				g_status_adv = true;
 			}
 			g_event_status &= ~(EVENT_ADV_START);
@@ -1828,9 +1893,12 @@ int main(void)
 
 		if (g_event_status & EVENT_ADV_STOP)
 		{//停止广播
-			err_code = sd_ble_gap_adv_stop();
-			APP_ERROR_CHECK(err_code);
-			g_status_adv = false;
+		    if (g_status_adv)
+		    {
+    			err_code = sd_ble_gap_adv_stop();
+    			APP_ERROR_CHECK(err_code);
+    			g_status_adv = false;
+		    }
 			g_event_status &= ~(EVENT_ADV_STOP);
 		}
 

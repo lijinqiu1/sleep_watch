@@ -21,7 +21,7 @@ void battery_manager(void)
 {
     if (!nrf_gpio_pin_read(BQ24040_PG_PIN))
     {
-       if((!nrf_gpio_pin_read(BQ24040_CHG_PIN))&& (battery_value < BATTER_VALUE_100))
+       if((!nrf_gpio_pin_read(BQ24040_CHG_PIN)) && (battery_value < BATTER_VALUE_100))
        {//³äµçÖÐ
             battery_charge_cur_status = BATTERY_CHARGING;
             battery_charge_last_status = battery_charge_cur_status;
