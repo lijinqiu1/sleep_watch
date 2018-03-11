@@ -1210,42 +1210,6 @@ static void period_cycle_process(void * p_context)
 	//模拟日历
 	TimeSeconds ++;
 
-
-	//按键处理
-	/*
-	if (g_status_key_pressed == 1)
-	{
-		key_status = nrf_gpio_pin_read(BUTTON_1);
-		if (key_status == 0)
-		{
-			key_timer ++;
-            g_status_key_pressed = true;
-			if(key_timer > 10)
-			{//长按超过15s进如恢复出厂设置
-				// On assert, the system can only recover with a reset.
-				NVIC_SystemReset();
-                //memset((uint8_t *)&system_params,0xFF,sizeof(system_params_t));
-                //system_params_save(&system_params);
-			}
-		}
-		else if (g_status_key_pressed == true)
-		{
-			g_status_key_pressed = false;
-			if(key_timer >= 3)
-			{
-				//长按
-				g_event_status |= EVENT_KEY_PRESS_LONG;
-			}
-			else
-			{
-				//短按
-				g_event_status |= EVENT_KEY_PRESS_SHOT;
-			}
-			key_timer = 0;
-		}
-	}
-    */
-
 	if ((g_status_work == true)/*&&(lis3dh_timer++ >= LIS3DH_SMAPLE_RATE)*/)
 	{//使用三轴加速度采样
 //		lis3dh_timer = 0;
@@ -1298,8 +1262,6 @@ static void period_cycle_process(void * p_context)
 	if (g_status_alarm_status)
 	{
 		alarm_process();
-//		nrf_gpio_cfg_output(PWM_MOTO_PIN);
-//		nrf_gpio_pin_set(PWM_MOTO_PIN);
 	}
     //led 管理
     leds_process();
@@ -1759,12 +1721,12 @@ int main(void)
 				ax = Axes_Raw_Data.AXIS_X/16384.0;
 				ay = Axes_Raw_Data.AXIS_Y/16384.0;
 				az = Axes_Raw_Data.AXIS_Z/16384.0;
-				app_trace_log("X=%6f Y=%6f Z=%6f \r\n",
-					ax,ay,az);
+//				app_trace_log("X=%6f Y=%6f Z=%6f \r\n",
+//					ax,ay,az);
 				g_cur_Tilt = calculateTilt_B(ax,ay,az);
-				app_trace_log("Tilt = %6f \r\n", g_cur_Tilt);
-				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
-					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
+//				app_trace_log("Tilt = %6f \r\n", g_cur_Tilt);
+//				app_trace_log("y:%d m:%d d:%d h:%d m:%d s:%d\r\n",\
+//					          time.year,time.month,time.day,time.hour,time.minutes,time.seconds);
 			}
 			//存储角度值
 			if (g_event_status & EVENT_TILT_PUSH)
@@ -1827,7 +1789,7 @@ int main(void)
 		}
         if (g_event_status & EVENT_BEGIN_WORK)
         {//开始工作
-            if (system_params.device_bonded == true)
+//            if (system_params.device_bonded == true)
             {
             	leds_process_init(LED_WORK_BEGIN);
     			// begin to work

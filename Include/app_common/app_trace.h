@@ -12,7 +12,7 @@
  * @details Enables debug logs/ trace over UART. Tracing is enabled only if 
  *          ENABLE_DEBUG_LOG_SUPPORT is defined in the project.
  */
-//#define ENABLE_DEBUG_LOG_SUPPORT
+#define ENABLE_DEBUG_LOG_SUPPORT
 #ifdef ENABLE_DEBUG_LOG_SUPPORT
 /**
  * @brief Module Initialization.
