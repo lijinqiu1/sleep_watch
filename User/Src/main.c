@@ -59,10 +59,10 @@
 
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
 
-#define DEVICE_NAME                     "Pregn"                                     /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                     "Watch"                              /**< Name of device. Will be included in the advertising data. "Pregn"*/
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
-#define APP_ADV_TIMEOUT_IN_SECONDS      30                                         /**< The advertising timeout (in units of seconds). */
+#define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
 
 #define APP_ADV_INTERVAL_FAST            MSEC_TO_UNITS(25, UNIT_0_625_MS)               /**< Fast advertising interval (25 ms.). */
 #define APP_ADV_INTERVAL_SLOW            MSEC_TO_UNITS(2000, UNIT_0_625_MS)             /**< Slow advertising interval (2 seconds). */
