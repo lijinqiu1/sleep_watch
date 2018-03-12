@@ -52,14 +52,15 @@
 #include "led.h"
 #include "battery.h"
 #include "main.h"
-
-#define SOFT_VERSION     20180310-1
+#include "nrf_delay.h"
+#define SOFT_VERSION     20180312-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
 
-#define DEVICE_NAME                     "Watch"                              /**< Name of device. Will be included in the advertising data. "Pregn"*/
+#define DEVICE_NAME                     "Watch"                              /**< Name of device. Will be included in the advertising data.*/
+//#define DEVICE_NAME                     "Pregn"                              /**< Name of device. Will be included in the advertising data.*/
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
@@ -1789,7 +1790,7 @@ int main(void)
 		}
         if (g_event_status & EVENT_BEGIN_WORK)
         {//开始工作
-//            if (system_params.device_bonded == true)
+            if (system_params.device_bonded == true)
             {
             	leds_process_init(LED_WORK_BEGIN);
     			// begin to work
@@ -1950,6 +1951,7 @@ int main(void)
 			        {
 			            err_code = ble_nus_send_string(&m_nus, data_array, 12);
 			        }
+					nrf_delay_ms(100);
                     leds_process_flash_fast();
                     app_trace_log("data sending\n");
 				}
@@ -1960,7 +1962,6 @@ int main(void)
 			}
 		}
         power_manage();
-//        nrf_gpio_pin_toggle(LED_RED);
     }
 }
 

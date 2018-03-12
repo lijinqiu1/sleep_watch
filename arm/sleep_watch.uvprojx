@@ -336,7 +336,7 @@
               <MiscControls></MiscControls>
               <Define>BOARD_PCA10001 NRF51,DEBUG_NRF_USER, BLE_STACK_SUPPORT_REQD SPI_MASTER_1_ENABLE ADV_GENERAL</Define>
               <Undefine></Undefine>
-              <IncludePath>..;..\Include;..\Include\app_common;..\Include\ble;..\Include\ble\ble_services;..\Include\s110;..\Include\sd_common;..\Include\serialization\connectivity;..\Include\ble\device_manager;..\Include\sdk;..\User\Inc</IncludePath>
+              <IncludePath>..;..\Include;..\Include\app_common;..\Include\ble;..\Include\ble\ble_services;..\Include\s110;..\Include\sd_common;..\Include\serialization\connectivity;..\Include\ble\device_manager;..\Include\sdk;..\User\Inc;..\Source\nrf_delay</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -489,6 +489,11 @@
               <FileName>app_trace.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Source\app_common\app_trace.c</FilePath>
+            </File>
+            <File>
+              <FileName>nrf_delay.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Source\nrf_delay\nrf_delay.c</FilePath>
             </File>
           </Files>
         </Group>
