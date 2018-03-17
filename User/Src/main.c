@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 #include "nrf_delay.h"
-#define SOFT_VERSION     20180312-1
+#define SOFT_VERSION     20180313-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -245,15 +245,15 @@ static void key_req_timeout_handler(void * p_context)
     if (nrf_gpio_pin_read(BUTTON_1) == 0)
     {
         key_count ++;
+		if (key_count >= 30)
+        {//进入dfu模式
+            NVIC_SystemReset();
+        }
         app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
     }
     else
     {
-        if (key_count >= 30)
-        {//进入dfu模式
-            NVIC_SystemReset();
-        }
-        else if (key_count >= 15)
+        if (key_count >= 15)
         {//恢复出厂设置
             memset((uint8_t *)&system_params,0xFF,sizeof(system_params_t));
             system_params_save(&system_params);
