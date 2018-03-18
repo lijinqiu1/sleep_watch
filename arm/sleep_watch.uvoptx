@@ -118,7 +118,7 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>DLGUARM</Key>
-          <Name>滹?</Name>
+          <Name>旞[</Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -172,6 +172,16 @@
           <count>4</count>
           <WinNumber>1</WinNumber>
           <ItemText>queue_message_data[10]</ItemText>
+        </Ww>
+        <Ww>
+          <count>5</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>system_params</ItemText>
+        </Ww>
+        <Ww>
+          <count>6</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>tm,0x0A</ItemText>
         </Ww>
       </WatchWindow1>
       <MemoryWindow1>

@@ -59,8 +59,8 @@
 
 #define WAKEUP_BUTTON_PIN               BUTTON_0                                    /**< Button used to wake up the application. */
 
-#define DEVICE_NAME                     "Watch"                              /**< Name of device. Will be included in the advertising data.*/
-//#define DEVICE_NAME                     "Pregn"                              /**< Name of device. Will be included in the advertising data.*/
+//#define DEVICE_NAME                     "Watch"                              /**< Name of device. Will be included in the advertising data.*/
+#define DEVICE_NAME                     "Pregn"                              /**< Name of device. Will be included in the advertising data.*/
 
 #define APP_ADV_INTERVAL                64                                          /**< The advertising interval (in units of 0.625 ms. This value corresponds to 40 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS      180                                         /**< The advertising timeout (in units of seconds). */
@@ -100,7 +100,7 @@
 
 #define LIS3DH_SMAPLE_RATE				1											/**< 三轴加速度采样频率 单位:秒 >**/
 
-#define ANGLE_SMAPLE_RATE				180											/**< 角度数据采样频率 单位:秒 >**/
+#define ANGLE_SMAPLE_RATE				10											/**< 角度数据采样频率 单位:秒 >**/
 //gpiote
 #define MAX_USERS						1
 //蓝牙拦截配对密码
@@ -245,15 +245,11 @@ static void key_req_timeout_handler(void * p_context)
     if (nrf_gpio_pin_read(BUTTON_1) == 0)
     {
         key_count ++;
-		if (key_count >= 30)
+		if (key_count >= 10)
         {//进入dfu模式
             NVIC_SystemReset();
         }
-        app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
-    }
-    else
-    {
-        if (key_count >= 15)
+        else if (key_count >= 15)
         {//恢复出厂设置
             memset((uint8_t *)&system_params,0xFF,sizeof(system_params_t));
             system_params_save(&system_params);
@@ -262,10 +258,16 @@ static void key_req_timeout_handler(void * p_context)
         {
             g_event_status |= EVENT_KEY_PRESS_LONG;
         }
-        else
-        {
-            g_event_status |= EVENT_KEY_PRESS_SHOT;
-        }
+//        else
+//        {
+//            g_event_status |= EVENT_KEY_PRESS_SHOT;
+//        }
+        app_timer_start(m_key_tiemr_id,APP_TIMER_TICKS(1000,APP_TIMER_PRESCALER),NULL);
+    }
+    else
+    {
+		if (key_count < 5)
+			g_event_status |= EVENT_KEY_PRESS_SHOT;
         key_count = 0;
     }
 }
@@ -1765,7 +1767,7 @@ int main(void)
 					g_event_status |= EVENT_BEGIN_WORK;
                     app_trace_log("connect true %d\n",__LINE__);
 				}
-                else if (battery_get_charege_status() == BATTERY_NOT_CHARGE)
+                else //if (battery_get_charege_status() == BATTERY_NOT_CHARGE)
                 {
                     g_event_status |= EVENT_BEGIN_WORK;
                 }
