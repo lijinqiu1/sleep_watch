@@ -53,7 +53,7 @@
 #include "battery.h"
 #include "main.h"
 #include "nrf_delay.h"
-#define SOFT_VERSION     20180313-1
+#define SOFT_VERSION     20180318-1
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0                                           /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -100,7 +100,7 @@
 
 #define LIS3DH_SMAPLE_RATE				1											/**< 三轴加速度采样频率 单位:秒 >**/
 
-#define ANGLE_SMAPLE_RATE				10											/**< 角度数据采样频率 单位:秒 >**/
+#define ANGLE_SMAPLE_RATE				30											/**< 角度数据采样频率 单位:秒 >**/
 //gpiote
 #define MAX_USERS						1
 //蓝牙拦截配对密码
@@ -1179,7 +1179,7 @@ void sleep_manage(void)
 			}
 			else if ((g_status_alarm_status == true)&&
 				(fabs(cur_Tilt - g_cur_Tilt) > 15.00))
-			{//角度变化超过5度，解除报警
+			{//角度变化超过15度，解除报警
 				cur_Tilt = g_cur_Tilt;
 				g_status_alarm_status = false;
 				cur_timeseconds = TimeSeconds;
@@ -1720,7 +1720,7 @@ int main(void)
 		{
 			response = LIS3DH_GetAccAxesRaw(&Axes_Raw_Data);
 			if (response == 1) {
-				ConvertUTCTime(&time,TimeSeconds);
+//				ConvertUTCTime(&time,TimeSeconds);
 				ax = Axes_Raw_Data.AXIS_X/16384.0;
 				ay = Axes_Raw_Data.AXIS_Y/16384.0;
 				az = Axes_Raw_Data.AXIS_Z/16384.0;
@@ -1737,7 +1737,7 @@ int main(void)
 				ConvertUTCTime(&time,TimeSeconds);
 				item.year = time.year - 2000;
 				item.mon = time.month;
-				item.day = time.day;
+				item.day = time.day-1;
 				item.hour = time.hour;
 				item.min = time.minutes;
 				item.second = time.seconds;
@@ -1767,7 +1767,7 @@ int main(void)
 					g_event_status |= EVENT_BEGIN_WORK;
                     app_trace_log("connect true %d\n",__LINE__);
 				}
-                else //if (battery_get_charege_status() == BATTERY_NOT_CHARGE)
+                else if (battery_get_charege_status() == BATTERY_NOT_CHARGE)
                 {
                     g_event_status |= EVENT_BEGIN_WORK;
                 }
